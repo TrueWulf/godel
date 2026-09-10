@@ -1,9 +1,21 @@
-# Godel
+<p align="center">
+  <img src="assets/godel-g.png" alt="Godel g mark" width="120">
+</p>
 
-Godel is a small, static Linux init and service supervisor written in
-[Hare](https://harelang.org). It is for VMs, embedded images, and personal
-systems where a transparent PID 1 is more useful than a distribution-sized
-service manager.
+<h1 align="center">godel</h1>
+
+<p align="center">
+  A small, static Linux init and service supervisor written in Hare.
+</p>
+
+<p align="center">
+  <a href="https://codeberg.org/TrueWulf/godel">Source</a> ·
+  <a href="docs/benchmarks.md">Benchmarks</a> ·
+  <a href="examples/services.conf">Example configuration</a>
+</p>
+
+Godel is for VMs, embedded images, and personal systems where a transparent
+PID 1 is more useful than a distribution-sized service manager.
 
 It is **not** a systemd replacement and does not try to compete with runit,
 dinit, or other mature general-purpose init systems. Godel is an experiment in
