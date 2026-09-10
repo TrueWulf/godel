@@ -1,8 +1,4 @@
-<p align="center">
-  <img src="assets/godel-g.png" alt="Godel g mark" width="120">
-</p>
-
-<h1 align="center">godel</h1>
+<h1 align="center"><img src="assets/godel-wordmark.png" alt="godel" width="330"></h1>
 
 <p align="center">
   A small, static Linux init and service supervisor written in Hare.
