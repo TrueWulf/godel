@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1-beta.1 - Unreleased
+
+- Continue the beta line after the `v0.6.0` feature release.
+- Reserve `1.0.0` for a stable release after real-system validation.
+
 ## 0.6.0 - 2026-09-10
 
 - Made the restart policy a Hare tagged union, so restart delays only exist on

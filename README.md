@@ -1,7 +1,7 @@
 <h1 align="center"><img src="assets/godel-wordmark.png" alt="godel" width="330"></h1>
 
 <p align="center">
-  A small, static Linux init and service supervisor written in Hare.
+  A simple, static Linux init and service supervisor written in Hare.
 </p>
 
 <p align="center">
@@ -13,16 +13,16 @@
 Godel is for VMs, embedded images, and personal systems where a transparent
 PID 1 is more useful than a distribution-sized service manager.
 
-It is **not** a systemd replacement and does not try to compete with runit,
-dinit, or other mature general-purpose init systems. Godel is an experiment in
-what a modern, allocation-free Hare init can look like: small enough to audit,
-strict enough to fail visibly, and based on current Linux process primitives.
+It is **not** a systemd replacement and does not try to compete with OpenRC,
+runit, dinit, s6, or GNU Shepherd. Godel is an experiment in a simple,
+allocation-free Hare init: explicit enough to audit, strict enough to fail
+visibly, and based on current Linux process primitives.
 
 ## Why Hare
 
 Hare produces a static binary without libc by default and keeps the language
-and runtime deliberately small. Godel 0.6.0 measures its static PID 1
-footprint and build time in [`docs/benchmarks.md`](docs/benchmarks.md).
+and runtime deliberately small. Godel measures its static PID 1 footprint and
+build time in [`docs/benchmarks.md`](docs/benchmarks.md).
 
 Godel uses Hare tagged unions for service-exit decisions, fixed storage rather
 than a heap, and explicit Linux syscalls only where the standard library does
@@ -48,7 +48,7 @@ Requires Hare 0.26.0.1 or newer, a Linux host, and `make`.
 
 ```sh
 make          # build bin/godel
-make test     # 27 unit tests
+make test     # 31 unit tests
 ```
 
 The Makefile defaults to `~/tools/hare/bin/hare`; override it with
@@ -94,7 +94,8 @@ tab-separated line per service: name, state, PID, and restart count.
 
 ## Status
 
-Godel 0.6.0-beta.1 is experimental software. It is Linux-only and relies on
+Godel 0.6.1-beta.1 is experimental software. A stable release is reserved for
+1.0.0 after sustained real-system testing. It is Linux-only and relies on
 pidfds for its preferred supervision path (Linux 5.3+) and `cgroup.kill` for
 full cgroup tree cleanup (Linux 5.14+). The SIGCHLD and process-group paths
 keep the supervisor functional on older kernels with reduced isolation.

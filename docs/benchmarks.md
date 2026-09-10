@@ -1,4 +1,4 @@
-# Godel 0.6.0 Benchmarks
+# Godel 0.6.1-beta.1 Benchmarks
 
 Godel is intentionally small rather than benchmark-driven. These measurements
 describe a static Hare PID 1 on an x86_64 QEMU VM with 256 MiB RAM. The boot
