@@ -224,6 +224,84 @@ export fn parse(s: *set, source: []u8) (void | diag) = {
 	};
 };
 
+// Scans one whitespace-separated word from buf[rd..end] with shell-like
+// quoting and writes its content to buf[wr..]. Because quoted text only
+// shrinks a word, the destination never overtakes the source and no
+// allocation is needed. Quotes may be concatenated with bare characters.
+// Outside quotes, a backslash escapes the next byte; inside double quotes
+// only \" and \\ are special. Returns (off, len, next_rd, next_wr).
+fn scan_word(
+	buf: []u8,
+	rd: size,
+	end: size,
+	wr: size,
+	line: size,
+) ((size, size, size, size) | diag) = {
+	let w = wr;
+	let i = rd;
+	let in_double = false;
+	let in_single = false;
+	for (true) {
+		if (i == end) {
+			if (in_double || in_single) {
+				return diag { line = line, msg = "unterminated quote" };
+			};
+			break;
+		};
+		const c = buf[i];
+		if (in_double) {
+			if (c == '"') {
+				in_double = false;
+				i += 1;
+				continue;
+			};
+			if (c == '\\' && i + 1 < end
+					&& (buf[i + 1] == '"' || buf[i + 1] == '\\')) {
+				i += 1;
+			};
+			buf[w] = buf[i];
+			w += 1;
+			i += 1;
+			continue;
+		};
+		if (in_single) {
+			if (c == '\'') {
+				in_single = false;
+				i += 1;
+				continue;
+			};
+			buf[w] = c;
+			w += 1;
+			i += 1;
+			continue;
+		};
+		if (c == ' ' || c == '\t') {
+			i += 1;
+			break;
+		};
+		if (c == '"') {
+			in_double = true;
+			i += 1;
+			continue;
+		};
+		if (c == '\'') {
+			in_single = true;
+			i += 1;
+			continue;
+		};
+		if (c == '\\' && i + 1 < end) {
+			buf[w] = buf[i + 1];
+			w += 1;
+			i += 2;
+			continue;
+		};
+		buf[w] = c;
+		w += 1;
+		i += 1;
+	};
+	return (wr, w - wr, i, w);
+};
+
 fn apply_key(
 	s: *set,
 	svc: *service,
@@ -234,23 +312,25 @@ fn apply_key(
 ) (void | diag) = {
 	if (eqs(key, "command")) {
 		let argc: size = 0;
-		let start: (void | size) = void;
-		let i: size = 0;
-		for (i <= len(value); i += 1) {
-			const at_end = i == len(value);
-			const sep = !at_end && (value[i] == ' ' || value[i] == '\t');
-			if (start is void) {
-				if (!at_end && !sep) start = i;
-			} else if (at_end || sep) {
-				if (argc == MAX_ARGS) {
-					return diag { line = line_no, msg = "too many arguments" };
-				};
-				s.buf[base + i] = 0;
-				svc.argv_off[argc] = (base + start: size): u16;
-				svc.argv_len[argc] = (i - start: size): u16;
-				argc += 1;
-				start = void;
+		let rd = base;
+		let wr = base;
+		const end = base + len(value);
+		for (rd < end) {
+			for (rd < end && (s.buf[rd] == ' ' || s.buf[rd] == '\t')) rd += 1;
+			if (rd == end) break;
+			if (argc == MAX_ARGS) {
+				return diag { line = line_no, msg = "too many arguments" };
 			};
+			const word = match (scan_word(s.buf, rd, end, wr, line_no)) {
+			case let w: (size, size, size, size) => yield w;
+			case let d: diag => return d;
+			};
+			svc.argv_off[argc] = word.0: u16;
+			svc.argv_len[argc] = word.1: u16;
+			argc += 1;
+			s.buf[word.3] = 0;
+			rd = word.2;
+			wr = word.3 + 1;
 		};
 		svc.argc = argc: u8;
 		return;
@@ -286,32 +366,34 @@ fn apply_key(
 	};
 	if (eqs(key, "env")) {
 		let count: size = svc.envc: size;
-		let start: (void | size) = void;
-		let i: size = 0;
-		for (i <= len(value); i += 1) {
-			const at_end = i == len(value);
-			const sep = !at_end && (value[i] == ' ' || value[i] == '\t');
-			if (start is void) {
-				if (!at_end && !sep) start = i;
-			} else if (at_end || sep) {
-				if (count == MAX_ENV) {
-					return diag { line = line_no, msg = "too many environment entries" };
-				};
-				const entry = value[start: size..i];
-				if (!valid_env(entry)) {
-					return diag { line = line_no, msg = "env must be NAME=VALUE" };
-				};
-				for (let j = 0z; j < count; j += 1) {
-					if (env_key_equal(entry, svc_env(s, svc, j))) {
-						return diag { line = line_no, msg = "duplicate environment name" };
-					};
-				};
-				s.buf[base + i] = 0;
-				svc.env_off[count] = (base + start: size): u16;
-				svc.env_len[count] = (i - start: size): u16;
-				count += 1;
-				start = void;
+		let rd = base;
+		let wr = base;
+		const end = base + len(value);
+		for (rd < end) {
+			for (rd < end && (s.buf[rd] == ' ' || s.buf[rd] == '\t')) rd += 1;
+			if (rd == end) break;
+			if (count == MAX_ENV) {
+				return diag { line = line_no, msg = "too many environment entries" };
 			};
+			const word = match (scan_word(s.buf, rd, end, wr, line_no)) {
+			case let w: (size, size, size, size) => yield w;
+			case let d: diag => return d;
+			};
+			const entry = s.buf[word.0..word.0 + word.1];
+			if (!valid_env(entry)) {
+				return diag { line = line_no, msg = "env must be NAME=VALUE" };
+			};
+			for (let j = 0z; j < count; j += 1) {
+				if (env_key_equal(entry, svc_env(s, svc, j))) {
+					return diag { line = line_no, msg = "duplicate environment name" };
+				};
+			};
+			svc.env_off[count] = word.0: u16;
+			svc.env_len[count] = word.1: u16;
+			count += 1;
+			s.buf[word.3] = 0;
+			rd = word.2;
+			wr = word.3 + 1;
 		};
 		svc.envc = count: u8;
 		return;

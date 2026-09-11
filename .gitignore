@@ -1,4 +1,5 @@
 /bin
 .bin
 .qemu
+.image
 *.cpio
