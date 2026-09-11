@@ -3,7 +3,7 @@ PREFIX ?= /usr/local
 DESTDIR ?=
 export PATH := $(HOME)/tools/hare/bin:$(PATH)
 
-.PHONY: all test install qemu-reboot qemu-poweroff qemu-badconfig clean
+.PHONY: all test install image qemu-system qemu-reboot qemu-poweroff qemu-badconfig clean
 
 all: bin/godel bin/godelctl
 
@@ -21,6 +21,12 @@ test:
 install: bin/godel bin/godelctl
 	install -Dm755 bin/godel $(DESTDIR)$(PREFIX)/sbin/godel
 	install -Dm755 bin/godelctl $(DESTDIR)$(PREFIX)/bin/godelctl
+
+image:
+	tools/build-image.sh
+
+qemu-system: image
+	tools/run-system.sh
 
 qemu-reboot: all
 	tools/run-qemu.sh reboot
