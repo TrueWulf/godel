@@ -1,0 +1,35 @@
+# Boot, login, inspect status, kill the beacon service, watch it restart
+# per its on-failure policy, then power off cleanly.
+
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+comment the status snapshot lists every configured service
+send godelctl status
+expect beacon timeout=10
+expect godel# timeout=10
+
+comment find the beacon pid from the status snapshot and SIGKILL it
+send beacon_pid=$(awk '$1=="beacon"{print $3}' /run/godel/status | cut -d= -f2); echo beacon-pid-is-$beacon_pid
+expect beacon-pid-is- timeout=10
+expect godel# timeout=10
+send kill -9 $beacon_pid
+expect godel# timeout=10
+
+comment supervision must log the kill, schedule the restart, and run it
+expect killed by signal 9 timeout=15
+expect restarting in timeout=15
+expect beacon: alive timeout=15
+
+comment restart counter must be visible in the status snapshot
+send godelctl status
+expect restarts=1 timeout=10
+expect godel# timeout=10
+
+comment graceful poweroff over the godelctl interface
+send godelctl poweroff
+expect Godel: shutting down timeout=30
+expect powering off timeout=30

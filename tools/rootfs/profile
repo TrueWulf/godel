@@ -1,0 +1,5 @@
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+export PS1='godel# '
+export TERM=${TERM:-linux}
+umask 022
