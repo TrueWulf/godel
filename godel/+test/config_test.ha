@@ -273,3 +273,36 @@ after = a
 		"[service \"a\"]\ncommand = /bin/true\nenv = N\"O\"T-VALID=yes\n")),
 		3, "env must be NAME=VALUE");
 };
+
+@test fn notification_fd_defaults_to_zero() void = {
+	let s = set { ... };
+	parse_ok(&s, "[service \"a\"]\ncommand = /bin/true\n");
+	assert(s.services[0].notification_fd == 0);
+};
+
+@test fn parses_notification_fd() void = {
+	let s = set { ... };
+	parse_ok(&s, "[service \"a\"]\ncommand = /bin/true\nnotification-fd = 3\n");
+	assert(s.services[0].notification_fd == 3);
+};
+
+@test fn rejects_low_notification_fd() void = {
+	let s = set { ... };
+	expect_diag(parse(&s, strings::toutf8(
+		"[service \"a\"]\ncommand = /bin/true\nnotification-fd = 2\n")),
+		3, "notification-fd must be 3 or higher");
+};
+
+@test fn rejects_non_numeric_notification_fd() void = {
+	let s = set { ... };
+	expect_diag(parse(&s, strings::toutf8(
+		"[service \"a\"]\ncommand = /bin/true\nnotification-fd = stdio\n")),
+		3, "notification-fd must be a number");
+};
+
+@test fn rejects_huge_notification_fd() void = {
+	let s = set { ... };
+	expect_diag(parse(&s, strings::toutf8(
+		"[service \"a\"]\ncommand = /bin/true\nnotification-fd = 1025\n")),
+		3, "notification-fd too large");
+};

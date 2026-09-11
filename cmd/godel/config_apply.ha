@@ -67,9 +67,12 @@ fn apply_config(next: size) void = {
 	};
 	for (let i = 0z; i < sets[next].count; i += 1) {
 		const j = match_idx[i];
-		if (j == godel::NO_INDEX) continue;
+		if (j == godel::NO_INDEX) {
+			svcs[i] = godel::new_runtime();
+			notify_r[i] = -1;
+			continue;
+		};
 		if (i == j) {
-			// Same slot: keep the runtime, only reset the restart book.
 			svcs[i].restarts = 0;
 			svcs[i].restart_at = 0;
 			continue;
@@ -78,19 +81,41 @@ fn apply_config(next: size) void = {
 		svcs[i].restarts = 0;
 		svcs[i].restart_at = 0;
 		svcs[j] = godel::runtime { pidfd = -1, ... };
-		let _ = godel::epoll_modify(&ep, svcs[i].pidfd, i: u64);
+		notify_r[i] = notify_r[j];
+		notify_r[j] = -1;
+		if (svcs[i].pidfd >= 0) {
+			let _ = godel::epoll_modify(&ep, svcs[i].pidfd, i: u64);
+		};
+	};
+	for (let i = sets[next].count: size; i < godel::MAX_SERVICES; i += 1) {
+		svcs[i] = godel::runtime { pidfd = -1, ... };
+		notify_r[i] = -1;
+	};
+	for (let i = 0z; i < sets[next].count; i += 1) {
+		const r = &svcs[i];
+		r.pending = switch (r.state) {
+		case godel::state::up, godel::state::backoff => yield false;
+		case godel::state::stopped => yield !r.finished;
+		case godel::state::gave_up => yield true;
+		};
 	};
 	active_set = next;
 
-	let order: [godel::MAX_SERVICES]size = [0...];
-	const total = godel::start_order(&sets[active_set], &order);
-	for (let k = 0z; k < total; k += 1) {
-		const index = order[k];
-		if (svcs[index].state == godel::state::up) continue;
-		start(index);
-	};
+	pump_starts();
 	check_recovery();
 	write_status();
+};
+
+fn pump_starts() void = {
+	if (shutdown.active) return;
+	let order: [godel::MAX_SERVICES]size = [0...];
+	const total = godel::ready_starts(&sets[active_set], svcs[..], &order);
+	for (let k = 0z; k < total; k += 1) {
+		const index = order[k];
+		if (!svcs[index].pending) continue;
+		svcs[index].pending = false;
+		start(index);
+	};
 };
 
 fn reload() void = {

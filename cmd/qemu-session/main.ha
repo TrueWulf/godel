@@ -1,18 +1,3 @@
-// qemu-session drives scripted serial-console sessions for the Godel test
-// image: it boots QEMU with the image's serial console on pipes, replays an
-// expect/send script, and records the full console transcript to a log
-// file. Exit status 0 means every expectation matched in the transcript,
-// which is the evidence for the system tests.
-//
-// Script format, one action per line; blank lines and #comments ignored:
-//   expect PATTERN [timeout=SECONDS]   wait for PATTERN in unread output
-//   send TEXT                          write TEXT plus a newline
-//   write TEXT                         write TEXT verbatim (no newline)
-//   verify PATTERN                     PATTERN must exist in the transcript
-//   sleep SECONDS                      pause the replay, output still logged
-//   comment TEXT                       only recorded in the transcript log
-//
-// Patterns are plain substrings matched against the raw console bytes.
 use bytes;
 use fmt;
 use fs;
@@ -43,8 +28,16 @@ type state = struct {
 def CHUNK: size = 4096;
 def TAIL: size = 1500;
 
+let qemu: (exec::process | void) = void;
+
 fn fail(msg: str) never = {
 	fmt::errorfln("qemu-session: FAIL: {}", msg)!;
+	match (qemu) {
+	case let p: exec::process =>
+		exec::kill(p)!;
+		let _ = exec::wait(&p);
+	case void => void;
+	};
 	os::exit(1);
 };
 
@@ -189,9 +182,6 @@ fn stop(q: *state) void = {
 	let _ = exec::wait(&q.proc)!;
 };
 
-// Reads console output for up to `ms` milliseconds. Returns false on EOF.
-// Data always lands in the transcript, so the caller re-checks its pattern
-// after every call.
 fn pump(q: *state, ms: i64) bool = {
 	let fds = [poll::pollfd {
 		fd = q.out_r,
@@ -244,7 +234,7 @@ export fn main() void = {
 	let disk = "";
 	let script_path = "";
 	let log_path = "";
-	let cmdline = "console=ttyS0,115200 root=/dev/vda rw init=/sbin/godel panic=-1";
+	let cmdline = "console=ttyS0,115200 root=/dev/vda ro init=/sbin/godel panic=-1";
 	let memory = "256M";
 	let extras = false;
 	let noreboot = false;
@@ -281,8 +271,6 @@ export fn main() void = {
 
 	const actions = parse_script(script_path);
 
-	// Child stdin comes from one pipe; stdout and stderr merge into the
-	// other so the transcript is a single stream.
 	const (in_r, in_w) = exec::pipe();
 	const (out_r, out_w) = exec::pipe();
 	defer io::close(in_r)!;
@@ -322,7 +310,9 @@ export fn main() void = {
 		out_r = out_r,
 		in_w = in_w,
 		proc = match (exec::start(&cmd)) {
-		case let p: exec::process => yield p;
+		case let p: exec::process =>
+			qemu = p;
+			yield p;
 		case => fail("cannot start QEMU");
 		},
 		log = logf,
@@ -344,8 +334,6 @@ export fn main() void = {
 			case => fail("console closed before write");
 			};
 		case kind::verify =>
-			// Drain whatever arrived while we were not reading
-			// (e.g. during a sleep), then check the transcript.
 			let found = false;
 			for (let attempt = 0; attempt < 4; attempt += 1) {
 				if (bytes::contains(q.transcript,
@@ -365,8 +353,6 @@ export fn main() void = {
 		};
 	};
 
-	// Give trailing output a moment, then terminate QEMU unless it
-	// already exited (a poweroff in the script exits QEMU by itself).
 	if (pump(&q, 1000)) {
 		stop(&q);
 	} else {
