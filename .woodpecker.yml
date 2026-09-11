@@ -1,0 +1,14 @@
+when:
+  - event: push
+    branch: main
+  - event: pull_request
+  - event: tag
+
+steps:
+  unit-tests:
+    image: alpine:3.22
+    commands:
+      - apk add --no-cache hare make
+      - hare version
+      - make test HARE=hare
+      - make HARE=hare

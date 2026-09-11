@@ -1,9 +1,32 @@
 # Changelog
 
-## 0.6.1-beta.1 - Unreleased
+## 0.7.0-beta.1 - 2026-09-11
 
-- Continue the beta line after the `v0.6.0` feature release.
-- Reserve `1.0.0` for a stable release after real-system validation.
+- Added a bootable QEMU test image: `tools/build-rootfs.sh`,
+  `tools/build-image.sh`, `tools/run-system.sh`, and `make qemu-system`.
+  Godel runs as PID 1 from an ext4 virtio disk with busybox, serial
+  login through getty, and a persistent root filesystem.
+- Added real boot oneshots: hostname, root remount rw, `/tmp` tmpfs,
+  and optional `/home` and `/var` mounts that tolerate missing disks.
+- Added `godelctl` with `status`, `reload`, `reboot`, and `poweroff`
+  over the documented PID 1 signal contract and status snapshot.
+- Added quote-aware parsing for `command` and `env`: double and single
+  quotes, backslash escapes, empty quoted arguments, and concatenation,
+  all allocation-free in place. Unterminated quotes are rejected with a
+  line-numbered diagnostic.
+- Fixed reload restarting every unchanged running service: matched
+  services in the same slot kept their runtime instead of being reset.
+- Fixed graceful shutdown: stop now sends SIGTERM before the SIGKILL
+  escalation; cgroup tree sweep happens at the escalation, not upfront.
+- Added sessions and harnesses: `tools/qemu-session.py`, six
+  `tools/sessions/*.session` scenarios including SIGKILL recovery,
+  SIGTERM-trapping services, corrupted-config recovery, reload of
+  added/changed/removed oneshots, and poweroff during restart backoff.
+- Ran 50 consecutive boot/reboot soak cycles on both
+  `vmlinuz-linux-lts` and `vmlinuz-linux-zen` with retained transcripts.
+- Documented `docs/first-boot.md` and `docs/architecture.md` with a
+  kernel compatibility table; refreshed README and benchmarks with
+  measured numbers.
 
 ## 0.6.0 - 2026-09-10
 
