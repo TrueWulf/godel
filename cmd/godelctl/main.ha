@@ -1,6 +1,3 @@
-// godelctl drives a running Godel PID 1 over its documented control
-// interface: signals to process 1 plus the /run/godel/status snapshot.
-// The interface is stable; the transport may change after 1.0.
 use fmt;
 use fs;
 use io;
