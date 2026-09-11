@@ -1,6 +1,3 @@
-# Boot, login, inspect status, kill the beacon service, watch it restart
-# per its on-failure policy, then power off cleanly.
-
 expect login: timeout=90
 send root
 expect Password:
@@ -10,6 +7,11 @@ expect godel#
 comment the status snapshot lists every configured service
 send godelctl status
 expect beacon timeout=10
+expect godel# timeout=10
+
+comment the beacon heartbeats into its per-service log, not the console
+send cat /run/godel/logs/beacon.log
+expect beacon: alive timeout=10
 expect godel# timeout=10
 
 comment find the beacon pid from the status snapshot and SIGKILL it
@@ -22,7 +24,12 @@ expect godel# timeout=10
 comment supervision must log the kill, schedule the restart, and run it
 expect killed by signal 9 timeout=15
 expect restarting in timeout=15
-expect beacon: alive timeout=15
+
+comment the restarted beacon now logs through the writable root
+sleep 2
+send cat /var/log/godel/beacon.log
+expect beacon: alive timeout=10
+expect godel# timeout=10
 
 comment restart counter must be visible in the status snapshot
 send godelctl status

@@ -1,5 +1,3 @@
-# A service that ignores SIGTERM must still die on the shutdown deadline:
-# SIGTERM first, then the SIGKILL escalation sweeps the whole tree.
 
 expect login: timeout=90
 send root

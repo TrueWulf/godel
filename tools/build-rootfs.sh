@@ -1,7 +1,3 @@
-# Assembles the disposable Godel test root filesystem under .image/root.
-# Nothing outside .image is written. The static busybox is fetched once
-# into .image/cache. Binaries must already exist in bin/ (build-image.sh
-# builds them first). No root privileges are required.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -39,8 +35,6 @@ chmod 1777 "$stage/tmp"
 chmod 700 "$stage/root"
 
 install -m 755 "$busybox" "$stage/bin/busybox"
-# init, halt, reboot, and poweroff are deliberately not installed: their
-# busybox signal conventions differ from Godel's. Use godelctl instead.
 for applet in sh ash cat ls ps kill echo printf sleep sync dmesg uname \
 	hostname mount umount setsid stty clear reset sed vi grep cp mv rm \
 	ln chmod chown mkdir mknod touch id env date true false test seq \
@@ -52,6 +46,21 @@ done
 
 install -m 755 "$root/bin/godel" "$stage/sbin/godel"
 install -m 755 "$root/bin/godelctl" "$stage/bin/godelctl"
+
+e2fsck=/usr/bin/e2fsck
+loader=/lib64/ld-linux-x86-64.so.2
+if [ -x "$e2fsck" ] && [ -f "$loader" ]; then
+	mkdir -p "$stage/usr/sbin" "$stage/usr/lib" "$stage/lib64"
+	install -m 755 "$e2fsck" "$stage/usr/sbin/e2fsck"
+	ln -s /usr/sbin/e2fsck "$stage/bin/fsck.ext4"
+	install -m 755 "$loader" "$stage/lib64/ld-linux-x86-64.so.2"
+	for lib in $(ldd "$e2fsck" | awk '$3 ~ /^\// {print $3}'); do
+		install -m 755 "$lib" "$stage/usr/lib/$(basename "$lib")"
+	done
+	for lib in $(ldd "$loader" | awk '$3 ~ /^\// {print $3}'); do
+		install -m 755 "$lib" "$stage/usr/lib/$(basename "$lib")"
+	done
+fi
 
 cat > "$stage/etc/passwd" <<'EOF'
 root:x:0:0:root:/root:/bin/sh

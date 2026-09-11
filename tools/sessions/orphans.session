@@ -1,7 +1,3 @@
-# A killed service leaves no orphans: children that were stray inside the
-# service cgroup must die with it (cgroup.kill), the process must not
-# linger as a zombie under PID 1, and the cgroup itself must be released.
-# Counters use [s]leep so the counting process never matches itself.
 
 expect login: timeout=90
 send root

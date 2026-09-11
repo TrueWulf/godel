@@ -1,0 +1,37 @@
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+comment dirty the root fs the hard way: data, then an immediate reset
+send dd if=/dev/zero of=/root/junk bs=1M count=8 2>/dev/null; sync; dd if=/dev/urandom of=/root/junk2 bs=1k count=64 2>/dev/null; echo b > /proc/sysrq-trigger
+expect SeaBIOS timeout=90
+
+comment the next boot must recover the dirty journal
+expect login: timeout=90
+sleep 1
+send root
+expect Password:
+send godel
+expect godel#
+send dmesg | grep "EXT4-fs (vda): recovery"
+expect EXT4-fs (vda): recovery timeout=10
+
+comment fsck-root ran before the remount and tolerated the mounted root
+send cat /run/godel/logs/fsck-root.log
+expect is mounted timeout=10
+expect kernel journal recovery timeout=10
+
+comment services that waited for the remount log under /var
+send ls /run/godel/logs
+expect fsck-root.log timeout=10
+expect rootfs-rw.log timeout=10
+
+comment the root reached read-write after the check
+send touch /root/rw-proof && echo rw-proof-ok
+expect rw-proof-ok timeout=10
+
+send godelctl poweroff
+expect Godel: shutting down timeout=30
+expect powering off timeout=30

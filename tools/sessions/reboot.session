@@ -1,5 +1,3 @@
-# Reboot over the godelctl interface: a marker written before the reboot
-# must survive on the persistent root disk and the new boot must be fresh.
 
 expect login: timeout=90
 send root

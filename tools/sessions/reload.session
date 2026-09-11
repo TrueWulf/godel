@@ -1,7 +1,3 @@
-# Reload lifecycle over one session: add a oneshot, change it, remove it,
-# refuse an invalid configuration without disturbing running services,
-# then recover and power off.
-
 expect login: timeout=90
 send root
 expect Password:
@@ -13,14 +9,18 @@ send printf '[service "hello"]\ncommand = /bin/echo hello-added-by-reload\ntype 
 expect godel# timeout=10
 send godelctl reload
 expect configuration reloaded timeout=15
-verify hello-added-by-reload
+send cat /var/log/godel/hello.log
+expect hello-added-by-reload timeout=10
+expect godel# timeout=10
 
 comment changing the command must replace the oneshot
 send sed -i s/hello-added-by-reload/hello-changed-by-reload/ /etc/godel/services.conf
 expect godel# timeout=10
 send godelctl reload
 expect configuration reloaded timeout=15
-verify hello-changed-by-reload
+send cat /var/log/godel/hello.log
+expect hello-changed-by-reload timeout=10
+expect godel# timeout=10
 
 comment removing it must disappear from the snapshot
 send sed -i '/service "hello"/,$d' /etc/godel/services.conf
