@@ -1,5 +1,6 @@
 use fmt;
 use rt;
+use time;
 use strings;
 
 export def MAX_PATH: size = 128;
@@ -86,5 +87,15 @@ export fn release(c: *const controller, name: []u8) void = {
 	case void => return;
 	case let d: []u8 => yield d;
 	};
-	let _ = rt::unlinkat(rt::AT_FDCWD, dir, rt::AT_REMOVEDIR);
+	// The kill that preceded this call is asynchronous: processes may
+	// still be dying. Retry briefly so the directory usually goes away
+	// with the service; a stubborn group is reused by the next attach.
+	for (let attempt = 0; attempt < 10; attempt += 1) {
+		match (rt::unlinkat(rt::AT_FDCWD, dir, rt::AT_REMOVEDIR)) {
+		case void => return;
+		case let e: rt::errno =>
+			if (e == rt::ENOENT) return;
+			time::sleep(1 * time::MILLISECOND);
+		};
+	};
 };

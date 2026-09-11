@@ -27,16 +27,16 @@ send sed -i '/service "hello"/,$d' /etc/godel/services.conf
 expect godel# timeout=10
 send godelctl reload
 expect configuration reloaded timeout=15
-send test $(godelctl status | grep -c hello) -eq 0 && echo hello-gone
-expect hello-gone timeout=10
+send echo hello-count-$(godelctl status | grep -c hello)
+expect hello-count-0 timeout=10
 
 comment an invalid configuration must be refused and change nothing
 send echo garbage-line >> /etc/godel/services.conf
 expect godel# timeout=10
 send godelctl reload
 expect reload refused timeout=15
-send test -d /proc/$(awk '$1=="ttyS0"{print $3}' /run/godel/status | cut -d= -f2) && echo ttyS0-still-running
-expect ttyS0-still-running timeout=10
+send echo ttyS0-state-$(awk '$1=="ttyS0"{print $2}' /run/godel/status)
+expect ttyS0-state-up timeout=10
 
 comment fixing the file must make reload work again
 send sed -i /^garbage-line$/d /etc/godel/services.conf

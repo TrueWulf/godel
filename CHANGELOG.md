@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.0-beta.2 - 2026-09-11
+
+- Fixed inherited-orphan zombies: PID 1 now reaps every exited child via
+  `wait4(-1)` and hands tracked services their statuses from a small
+  ring buffer instead of only waiting on known pids.
+- Fixed a cgroup attach race: the service child now joins its cgroup
+  before `execve`, so grandchildren can no longer be born outside the
+  group and survive `cgroup.kill`.
+- Made cgroup directory removal retry briefly while an asynchronous
+  kill drains the group, so released services leave no residue.
+- Added the orphans session proving no stray processes, no zombies, and
+  a released cgroup after SIGKILL of a service with children, and
+  hardened every session against matching its own command echo.
+- Improved godelctl error output (`cannot signal PID 1 (poweroff):
+  Operation not permitted` instead of a bare errno) and gave the
+  Makefile real build dependencies.
+
 ## 0.7.0-beta.1 - 2026-09-11
 
 - Added a bootable QEMU test image: `tools/build-rootfs.sh`,

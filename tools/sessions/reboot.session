@@ -20,8 +20,8 @@ expect Password:
 send godel
 expect godel#
 
-send cut -d. -f1 /proc/uptime | test $(cat) -lt 60 && echo fresh-boot
-expect fresh-boot timeout=10
+send echo fresh-boot-$(test $(cut -d. -f1 /proc/uptime) -lt 60 && echo yes || echo no)
+expect fresh-boot-yes timeout=10
 send cat /root/marker.txt
 expect marker-before-reboot timeout=10
 

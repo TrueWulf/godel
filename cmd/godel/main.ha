@@ -4,7 +4,7 @@ use godel;
 use rt;
 use strings;
 
-def VERSION: str = "0.7.0-beta.1";
+def VERSION: str = "0.7.0-beta.2";
 def SERVICES_CONF: str = "/etc/godel/services.conf";
 def CONSOLE_DEVICE: str = "/dev/console";
 def KILL_PHASE_MS: i64 = 1_000;
@@ -33,6 +33,43 @@ type dying_entry = struct {
 
 let dying: [godel::MAX_SERVICES]dying_entry =
 	[dying_entry { pidfd = -1, ... }...];
+
+// Statuses of children reaped before their supervisor looked at them.
+// PID 1 inherits orphans; their exits must never become zombies. This is
+// a small ring: once full, the oldest orphan status is overwritten.
+type reaped_entry = struct { used: bool, pid: int, status: u32 };
+
+let reaped: [godel::MAX_SERVICES * 4]reaped_entry =
+	[reaped_entry { ... }...];
+
+fn reap_orphans() void = {
+	let slot: size = 0;
+	for (true) {
+		const reaped_child = match (godel::wait_any_nohang()) {
+		case void => return;
+		case let r: (int, u32) => yield r;
+		};
+		reaped[slot] = reaped_entry {
+			used = true,
+			pid = reaped_child.0,
+			status = reaped_child.1,
+		};
+		slot = (slot + 1) % len(reaped);
+	};
+};
+
+// Looks up a child's exit status, preferring what the orphan reaper
+// already collected, and falls back to waiting on the pid directly.
+fn take_status(pid: int) (void | u32) = {
+	for (let i = 0z; i < len(reaped); i += 1) {
+		if (reaped[i].used && reaped[i].pid == pid) {
+			const status = reaped[i].status;
+			reaped[i] = reaped_entry { ... };
+			return status;
+		};
+	};
+	return godel::wait_pid_nohang(pid);
+};
 
 type shutdown_state = struct {
 	active: bool,
@@ -218,6 +255,8 @@ fn start(index: size) void = {
 			nm(godel::svc_name(cfg)));
 	};
 	if (!godel::attach(&cg, godel::svc_name(cfg), pid)) {
+		// The child attaches itself before exec; this only fires when
+		// the child died before exec or cgroups broke mid-boot.
 		logf("godel: {}: cgroup attach failed\n", nm(godel::svc_name(cfg)));
 	};
 	logf("godel: started {} (pid {})\n", nm(godel::svc_name(cfg)), pid: i64);
@@ -261,7 +300,7 @@ fn stop_service(index: size) void = {
 };
 
 fn on_service_death(index: size) void = {
-	const status = match (godel::wait_pid_nohang(svcs[index].pid)) {
+	const status = match (take_status(svcs[index].pid)) {
 	case void => return;
 	case let s: u32 => yield s;
 	};
@@ -325,7 +364,7 @@ fn all_stopped() bool = {
 fn on_dying_death(slot_index: size) void = {
 	const slot = &dying[slot_index];
 	if (!slot.used) return;
-	if (godel::wait_pid_nohang(slot.pid) is void) return;
+	if (take_status(slot.pid) is void) return;
 	if (slot.pidfd >= 0) {
 		godel::epoll_remove(&ep, slot.pidfd);
 		godel::close_fd(slot.pidfd);
@@ -346,7 +385,10 @@ fn handle_signal(sig: u8) void = {
 	case rt::SIGTERM, rt::SIGINT => begin_shutdown(shutdown_action::poweroff);
 	case rt::SIGUSR1 => begin_shutdown(shutdown_action::reboot);
 	case rt::SIGHUP => reload();
-	case rt::SIGCHLD => reap_unobserved_children();
+	case rt::SIGCHLD => {
+			reap_orphans();
+			reap_unobserved_children();
+		};
 	case => void;
 	};
 };
@@ -356,14 +398,14 @@ fn handle_signal(sig: u8) void = {
 fn reap_unobserved_children() void = {
 	for (let i = 0z; i < sets[active_set].count; i += 1) {
 		if (svcs[i].pid <= 0 || svcs[i].pidfd >= 0) continue;
-		match (godel::wait_pid_nohang(svcs[i].pid)) {
+		match (take_status(svcs[i].pid)) {
 		case void => void;
 		case let status: u32 => on_service_exit(i, status);
 		};
 	};
 	for (let i = 0z; i < godel::MAX_SERVICES; i += 1) {
 		if (!dying[i].used || dying[i].pidfd >= 0) continue;
-		if (godel::wait_pid_nohang(dying[i].pid) is u32) {
+		if (take_status(dying[i].pid) is u32) {
 			const slot = &dying[i];
 			if (slot.had_cgroup) {
 				const name = slot.name[..slot.name_len];
@@ -374,7 +416,7 @@ fn reap_unobserved_children() void = {
 		};
 	};
 	if (rescue_pid > 0 && rescue_pidfd < 0
-			&& godel::wait_pid_nohang(rescue_pid) is u32) {
+			&& take_status(rescue_pid) is u32) {
 		on_rescue_exit();
 	};
 	write_status();
@@ -506,7 +548,7 @@ fn run_rescue() never = {
 };
 
 fn on_rescue_death() void = {
-	if (godel::wait_pid_nohang(rescue_pid) is void) return;
+	if (take_status(rescue_pid) is void) return;
 	on_rescue_exit();
 };
 

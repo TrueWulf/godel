@@ -15,17 +15,18 @@ expect Godel: shutting down timeout=30
 
 comment Godel must enter the recovery shell instead of a boot loop
 expect entering recovery timeout=90
-send echo rescue-shell-alive
-expect rescue-shell-alive timeout=15
+send echo rescue-check-$(echo ok)
+expect rescue-check-ok timeout=15
 
 comment a repaired configuration takes effect when the shell exits
 send printf '%s\n' '[service "beacon"]' 'command = /bin/sh -c "while :; do echo beacon: alive; sleep 30; done"' 'restart = on-failure' '[service "ttyS0"]' 'command = /bin/getty -L 115200 ttyS0 vt100' 'restart = always' 'restart_delay = 1s' > /etc/godel/services.conf
 send exit
-expect beacon: alive timeout=30
-expect godel: started beacon timeout=30
+comment the repaired configuration serves both the beacon and a login prompt
+expect login: timeout=90
+verify godel: started beacon
+verify beacon: alive
 
 comment the repaired configuration must also serve a fresh login prompt
-expect login: timeout=90
 send root
 expect Password:
 send godel

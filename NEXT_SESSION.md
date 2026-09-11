@@ -2,7 +2,9 @@
 
 ## Current Baseline
 
-- Current development version: `0.7.0-beta.1` (tagged `v0.7.0-beta.1`).
+- Current development version: `0.7.0-beta.2` (tagged `v0.7.0-beta.2`;
+  `v0.7.0-beta.1` was tagged mid-session, before the orphan-reaping and
+  cgroup-race fixes landed on top).
 - Host system: Artix Linux with dinit as PID 1. Leave that installation
   intact.
 - Godel now boots as PID 1 from a persistent ext4 QEMU disk image
@@ -14,26 +16,23 @@
   `env`; 46 unit tests.
 - Sessions under `tools/sessions/` prove SIGKILL recovery, SIGKILL
   escalation against SIGTERM-trapping services, rescue-shell recovery,
-  reload of added/changed/removed oneshots, and poweroff during backoff.
+  reload of added/changed/removed oneshots, poweroff during backoff, and
+  orphan/zombie-free teardown of services with children.
 - 50 consecutive boot/reboot soak cycles completed on both
   `vmlinuz-linux-lts` (6.18.48) and `vmlinuz-linux-zen` (7.2.2) with
   transcripts kept under `.image/soak`.
 
 ## Candidate Work for 0.7.1 / 0.8
 
-1. Investigate the one flaky `badconfig-recovery` session observed once
-   during a full `test-system.sh` pass (a `login:` expectation failed
-   while the transcript contained the prompt; not reproducible in three
-   focused reruns). Consider a harness that also retries EOF races.
-2. Native mount unit only if the sh -c oneshots demonstrably lose real
+1. Native mount unit only if the sh -c oneshots demonstrably lose real
    failure modes; keep explicit commands otherwise.
-3. Readiness beyond start ordering: document the oneshot-chaining
+2. Readiness beyond start ordering: document the oneshot-chaining
    pattern more loudly or add a minimal `ready_file =` check.
-4. Real-hardware test on a non-critical machine with a separate,
+3. Real-hardware test on a non-critical machine with a separate,
    manually recoverable GRUB entry; never touch the host's
    `/boot/grub/grub.cfg`.
-5. QEMU CI once runner capacity allows (`make test-system` under KVM).
-6. Persistence: point `/run/godel/godel.log` at a mounted `/var/log`
+4. QEMU CI once runner capacity allows (`make test-system` under KVM).
+5. Persistence: point `/run/godel/godel.log` at a mounted `/var/log`
    when the optional `/var` disk is present.
 
 ## What Must Not Happen

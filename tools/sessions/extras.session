@@ -7,13 +7,13 @@ expect Password:
 send godel
 expect godel#
 
-send mountpoint -q /home && echo home-mounted
-expect home-mounted timeout=15
+send echo home-mountpoint-$(mountpoint -q /home && echo yes || echo no)
+expect home-mountpoint-yes timeout=15
 send cat /home/marker.txt
 expect godel home extra disk timeout=10
 
-send mountpoint -q /var && echo var-mounted
-expect var-mounted timeout=15
+send echo var-mountpoint-$(mountpoint -q /var && echo yes || echo no)
+expect var-mountpoint-yes timeout=15
 send cat /var/marker.txt
 expect godel var extra disk timeout=10
 
