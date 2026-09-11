@@ -26,7 +26,7 @@ be overridden without a rebuild:
 tools/run-system.sh                            # defaults
 KERNEL=/boot/vmlinuz-linux-zen tools/run-system.sh
 EXTRAS=1 tools/run-system.sh                   # attach /home and /var disks
-APPEND="console=ttyS0,115200 root=/dev/vda rw init=/sbin/godel" tools/run-system.sh
+APPEND="console=ttyS0,115200 root=/dev/vda ro init=/sbin/godel" tools/run-system.sh
 ```
 
 ## Log in
@@ -34,7 +34,7 @@ APPEND="console=ttyS0,115200 root=/dev/vda rw init=/sbin/godel" tools/run-system
 The serial console shows the Godel boot log and then a getty prompt:
 
 ```
-Godel 0.7.0-beta.3: starting
+Godel 0.8.0: starting
 godel: cgroup v2 enabled
 ...
 Godel test image godel-vm on /dev/ttyS0
@@ -49,7 +49,7 @@ itself.
 ## Drive the system
 
 ```sh
-godelctl status          # one line per service: name, state, pid, restarts
+godelctl status          # one line per service: name, state, pid, restarts, ready
 godelctl reload          # re-read /etc/godel/services.conf, SIGHUP to PID 1
 godelctl reboot
 godelctl poweroff
@@ -66,8 +66,19 @@ Kill a supervised service and watch the restart policy:
 kill -9 $(awk '$1=="beacon"{print $3}' /run/godel/status | cut -d= -f2)
 ```
 
-The console logs the signal, the scheduled restart delay, and the fresh
-start; `godelctl status` shows the incremented restart counter.
+PID 1 logs the signal, the scheduled restart delay, and the fresh start
+on the console; service stdout and stderr go to
+`/run/godel/logs/<name>.log` or `/var/log/godel/<name>.log` instead:
+
+```sh
+cat /var/log/godel/beacon.log
+```
+
+The image boots with `ro` and runs an opt-in `fsck-root` oneshot before
+the remount; modern e2fsck refuses a mounted root, so the hook reports
+that fact and leaves dirty-journal recovery to the kernel, which prints
+its `EXT4-fs (vda): recovery` line on the console after an unclean
+shutdown.
 
 The image deliberately does not install busybox `reboot`, `poweroff`, or
 `halt` applets: their signal conventions differ from Godel's. Use
@@ -77,8 +88,8 @@ Godel starts a recovery shell on the console; repair
 
 ## Scripted sessions and soak runs
 
-`tools/qemu-session.py` replays expect/send scripts over the serial
-console and records full transcripts:
+`bin/qemu-session` (built by `make`) replays expect/send scripts over
+the serial console and records full transcripts:
 
 ```sh
 tools/test-system.sh             # every tools/sessions/*.session scenario

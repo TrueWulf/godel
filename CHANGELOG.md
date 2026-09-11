@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.8.0 - 2026-09-11
+
+- Relicensed from GPL-3.0-or-later to BSD-2-Clause; the Hare standard
+  library remains MPL-2.0 and permits the larger work.
+- Added a readiness mechanism opt-in per service via
+  `notification-fd = N` (3..1024): the service is started with the write
+  end of a pipe at fd N and becomes ready by writing a newline, the same
+  wire convention s6, dinit, and nitro use. `after` gates on readiness
+  only where the dependency opted in; plain ordering stays the default.
+  A readiness failure degrades to plain ordering with a logged notice.
+- Added per-service logging: service stdout/stderr are routed to
+  `/var/log/godel/<name>.log` when writable, falling back to
+  `/run/godel/logs/<name>.log` on a read-only root, rotated to
+  `<name>.log.1` at restart past 64 KiB. The console now carries only
+  PID 1's own messages. The status snapshot gained a `ready=` field.
+- Changed the test image to boot with `root=... ro` and remount rw via a
+  notified `rootfs-rw` oneshot, so dependents start deterministically
+  after the remount. Added an opt-in `fsck-root` oneshot before the
+  remount that runs `fsck.ext4 -p`, reports honestly that a mounted
+  root cannot be checked, and leaves dirty-journal recovery to the
+  kernel; proven on a forced-dirty ext4 with a captured kernel recovery
+  line.
+- Added system sessions proving readiness gating (a late newline delays
+  the dependent, a silent notified service holds it indefinitely),
+  per-service log placement and rotation, and the fsck hook. All eleven
+  sessions pass on both test kernels.
+- Reload semantics refined: oneshots that ran to a clean completion are
+  no longer re-run by a reload that keeps their identity, and changing
+  `notification-fd` now replaces the service like an argv change.
+- Fixed a supervisor bug that readiness made visible: the orphan
+  reaper's status ring restarted at slot zero on every SIGCHLD, so each
+  burst of child exits overwrote the oldest recorded statuses. A service
+  whose pidfd signalled after its status was clobbered could never be
+  reaped and stalled the event loop; the ring cursor now persists across
+  calls. A 50-cycle soak reproduced the stall at boot 8 before the fix
+  and the transcript under `.image/soak` keeps the evidence.
+- qemu-session now kills its QEMU on every failure path instead of
+  leaking it.
+- Unit tests grew from 46 to 56, covering the notification-fd parser and
+  the readiness gating (dep_satisfied, ready_starts).
+
 ## 0.7.0-beta.3 - 2026-09-11
 
 - Replaced the Python serial-console harness with a static Hare binary
