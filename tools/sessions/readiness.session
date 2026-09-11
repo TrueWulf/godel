@@ -1,0 +1,40 @@
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+comment a notified service that signals readiness after four seconds
+send printf '[service "late"]\ncommand = /bin/sh -c "sleep 4; echo R >&3; while :; do sleep 1; done"\nnotification-fd = 3\nrestart = never\n' >> /etc/godel/services.conf
+expect godel# timeout=10
+
+comment its dependent must not start before the readiness newline
+send printf '[service "dependent"]\ncommand = /bin/sh -c "echo dependent-started; sleep 500"\nafter = late\nrestart = never\n' >> /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+
+comment the dependent is still held while late is unready
+sleep 2
+send echo dep-state-$(awk '$1=="dependent"{print $2}' /run/godel/status)
+expect dep-state-stopped timeout=10
+
+comment readiness arrives; only then does the dependent start
+expect late is ready after timeout=20
+expect started dependent timeout=10
+send echo dep-state-$(awk '$1=="dependent"{print $2}' /run/godel/status)
+expect dep-state-up timeout=10
+
+comment a notified service that never signals holds its dependent
+send printf '[service "mute"]\ncommand = /bin/sh -c "while :; do sleep 1; done"\nnotification-fd = 3\nrestart = never\n[service "behind"]\ncommand = /bin/sleep 500\nafter = mute\nrestart = never\n' >> /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+sleep 3
+send echo behind-state-$(awk '$1=="behind"{print $2}' /run/godel/status) mute-ready-$(awk '$1=="mute"{print $5}' /run/godel/status | cut -d= -f2)
+expect behind-state-stopped timeout=10
+expect mute-ready-no timeout=10
+
+send godelctl poweroff
+expect Godel: shutting down timeout=30
+expect powering off timeout=30

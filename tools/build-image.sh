@@ -1,7 +1,3 @@
-# Builds Godel and godelctl, assembles the root filesystem, and packs it
-# into ext4 disk images under .image/. The root disk boots directly with
-# init=/sbin/godel because the target kernels ship virtio-blk and ext4
-# built in. No root privileges are required anywhere.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -18,8 +14,6 @@ rm -f "$image/disk.ext4" "$image/home.ext4" "$image/var.ext4"
 mke2fs -q -F -t ext4 -b 4096 -I 256 -L godel-root \
 	-d "$image/root" "$image/disk.ext4" 64m
 
-# Extra disks for the optional /home and /var mount services. They are
-# attached only when GODEL_EXTRAS=1 is exported for tools/run-system.sh.
 mkdir -p "$image/extra-home" "$image/extra-var"
 echo "godel home extra disk" > "$image/extra-home/marker.txt"
 echo "godel var extra disk" > "$image/extra-var/marker.txt"

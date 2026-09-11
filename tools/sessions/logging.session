@@ -1,0 +1,37 @@
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+comment boot services that start before the remount log under /run
+send cat /run/godel/logs/beacon.log
+expect beacon: alive timeout=10
+comment mount oneshots wait for the remount, so they log under /var
+send ls /var/log/godel
+expect mount-home.log timeout=10
+expect mount-var.log timeout=10
+send head -c 60 /var/log/godel/mount-home.log
+expect no /home device timeout=10
+
+comment a large service log rotates at the next start
+send printf '[service "big"]\ncommand = /bin/sh -c "dd if=/dev/zero bs=1024 count=90 2>/dev/null; echo big-first-done"\ntype = oneshot\nrestart = never\n' >> /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+send wc -c < /var/log/godel/big.log
+expect 92175 timeout=10
+send sed -i s/big-first-done/big-second-done/ /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+send ls /var/log/godel
+expect big.log.1 timeout=10
+send cat /var/log/godel/big.log
+expect big-second-done timeout=10
+send wc -c < /var/log/godel/big.log.1
+expect 92175 timeout=10
+
+send godelctl poweroff
+expect Godel: shutting down timeout=30
+expect powering off timeout=30

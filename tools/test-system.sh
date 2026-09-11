@@ -1,6 +1,4 @@
 #!/bin/sh
-# Runs every serial-console session against a fresh copy of the image and
-# keeps transcripts under .image/logs. Exits nonzero on the first failure.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -17,6 +15,9 @@ for session in tools/sessions/*.session; do
 	name=$(basename "$session" .session)
 	echo "=== $name"
 	cp "$root/.image/disk.ext4" "$work/$name.ext4"
+	if [ "$name" = fsck ]; then
+		debugfs -w -R "ssv s_state 0" "$work/$name.ext4" > /dev/null 2>&1 || true
+	fi
 	extras=""
 	if [ "$name" = extras ]; then
 		extras="--extras"
