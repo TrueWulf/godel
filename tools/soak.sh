@@ -1,9 +1,3 @@
-# Runs N consecutive boot/reboot cycles against a fresh copy of the test
-# image and keeps the full transcript under .image/soak. Every cycle goes
-# through a real serial login and godelctl reboot, so the persistent ext4
-# root disk is remounted and journaled 50 times in a row.
-#
-# usage: tools/soak.sh [CYCLES] [KERNEL]
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
