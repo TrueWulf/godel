@@ -62,12 +62,45 @@ logged. On success, services are matched by name plus argv:
   bookkeeping (same slot) or move the runtime to the new slot and
   re-target its pidfd epoll tag;
 - removed: SIGTERM per policy;
-- added or changed: started in dependency order.
+- added or changed: started in dependency order, gated by readiness
+  where their dependencies opted into it. A oneshot that already ran to
+  a clean completion is not re-run by a reload that keeps its identity.
 
-`after` is start ordering only, never readiness. A oneshot that has not
-finished does not block later services; chain readiness explicitly by
-making later jobs depend on earlier oneshots only when a plain ordering
-is genuinely enough.
+## Readiness and start ordering
+
+`after` is start ordering: a dependent starts once its dependency has
+been started. That remains the default for every service. A service that
+declares `notification-fd = N` (N from 3 to 1024) opts into readiness:
+it is started with the write end of a pipe at fd N and becomes ready by
+writing a newline to it; any other bytes are ignored, and the read end
+stays registered so late newlines still count. This is the same wire
+convention s6, dinit, and nitro use, so their service packs port over.
+
+Readiness changes gating only where the *dependency* opted in. A
+dependent of a notified service starts only after the newline (or, for a
+notified oneshot, after a clean exit). Dependents of plain services
+follow plain ordering exactly as before. There is no readiness timeout:
+a notified service that never signals holds its dependents until it
+does, restarts, or exits cleanly. A notified service that crashes
+re-enters the unready state on its next start. If the readiness pipe
+cannot be created or registered, the service logs the fallback and its
+dependents proceed under plain ordering.
+
+The boot configuration of the test image uses this twice: `rootfs-rw`
+and `tmpfs-tmp` are notified oneshots, so gettys start only after the
+remount actually completed, and their logs land deterministically under
+`/var/log/godel`.
+
+## Service output logging
+
+Every service's stdout and stderr are redirected at spawn time to
+`/var/log/godel/<name>.log` when that path is creatable, falling back to
+`/run/godel/logs/<name>.log` while the root is read-only or `/var` is
+absent. The console keeps PID 1's own messages only. Rotation is
+size-based (64 KiB) and happens when a service (re)starts: an oversized
+log is renamed to `<name>.log.1` before the new file is opened. If
+neither location is writable the service keeps the console rather than
+dropping output.
 
 ## Failure paths
 
@@ -84,11 +117,14 @@ is genuinely enough.
 ## Observability
 
 - `/run/godel/status`: one tab-separated line per service —
-  `name`, `state` (`stopped|up|backoff|gave-up`), `pid=`, `restarts=`.
-  Written after every state change; read by `godelctl status`.
+  `name`, `state` (`stopped|up|backoff|gave-up`), `pid=`, `restarts=`,
+  `ready=` (`-` when the service is not notified, otherwise
+  `yes`/`no`). Written after every state change; read by
+  `godelctl status`.
 - `/run/godel/godel.log` (+ `.1`): the same lines as the console, in a
   two-generation 64 KiB ring file.
-- The console (fds 0/1/2 of PID 1) carries every log line.
+- The console (fds 0/1/2 of PID 1) carries every PID 1 log line; service
+  output goes to the per-service files described above.
 
 ## Control interface
 

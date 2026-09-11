@@ -36,6 +36,10 @@ not cover the kernel interface.
 - SIGCHLD fallback supervision if a pidfd is unavailable
 - cgroup v2 process-tree cleanup with process-group fallback
 - dependency ordering, restart policies, exponential backoff, and give-up
+- readiness opt-in per service (`notification-fd`), wire-compatible with
+  the s6/dinit/nitro convention; `after` gates on readiness where declared
+- per-service stdout/stderr logging under `/var/log/godel` (fallback
+  `/run/godel/logs`) with size rotation at restart
 - atomic SIGHUP config reload: invalid files never replace the active config
 - quote-aware `command` and `env` parsing (double/single quotes, escapes)
 - graceful shutdown: SIGTERM, service deadline, SIGKILL escalation, reboot
@@ -51,7 +55,7 @@ Requires Hare 0.26.0.1 or newer, a Linux host, and `make`.
 
 ```sh
 make          # build bin/godel and bin/godelctl
-make test     # 46 unit tests
+make test     # 56 unit tests
 ```
 
 The Makefile defaults to `~/tools/hare/bin/hare`; override it with
@@ -73,10 +77,14 @@ busybox on the disk, agetty on `ttyS0` and `tty1`, serial login as
 watch it restart, reload the config, reboot and power off —
 [`docs/first-boot.md`](docs/first-boot.md) walks through the whole flow.
 
-The scripted sessions in `tools/sessions/` prove the failure paths: SIGKILL
-recovery, SIGTERM-trapping services, corrupted configurations rescued from
-the recovery shell, reload of added, changed, and removed oneshots, and
-poweroff during restart backoff.
+The scripted sessions in `tools/sessions/` prove the failure paths and
+the new subsystems: SIGKILL recovery, SIGTERM-trapping services,
+corrupted configurations rescued from the recovery shell, reload of
+added, changed, and removed oneshots, readiness gating with a late
+newline, per-service logs with rotation, an fsck hook on a forced-dirty
+ext4 root, and poweroff during restart backoff. An honest comparison
+with nitro, runit, s6, and dinit is in
+[`docs/comparison.md`](docs/comparison.md).
 
 Older initramfs smoke tests are still available:
 
@@ -106,12 +114,21 @@ after = network
 ```
 
 Supported keys are `command`, `after`, `restart` (`always`, `on-failure`, or
-`never`), `restart_limit`, `restart_delay`, `shutdown_timeout`, `env`, and
-`type` (`service` or `oneshot`). `after` is start ordering only, never
-readiness. Limits are intentional and fixed: 16 services, 8 command
-arguments, 4 environment entries, 4 dependencies, and 31-byte names. See
+`never`), `restart_limit`, `restart_delay`, `shutdown_timeout`, `env`,
+`type` (`service` or `oneshot`), and `notification-fd`. `after` is start
+ordering; a dependency that declares `notification-fd = N` (3..1024) makes
+its dependents wait until it writes a newline to fd N — the same convention
+s6, dinit, and nitro use. Plain ordering applies everywhere else, and a
+notified service that never signals holds its dependents. Limits are
+intentional and fixed: 16 services, 8 command arguments, 4 environment
+entries, 4 dependencies, and 31-byte names. See
 [`examples/services.conf`](examples/services.conf) for a bootable
 VM-oriented configuration.
+
+Service stdout and stderr are routed to `/var/log/godel/<name>.log`
+(fallback `/run/godel/logs/<name>.log` while the root is read-only), rotated
+to `<name>.log.1` at restart past 64 KiB; the console stays reserved for
+PID 1's messages.
 
 `command` and `env` values are tokenized like a shell subset: double and
 single quotes group whitespace, backslash escapes the next byte outside
@@ -135,7 +152,7 @@ process.
 
 ## Status
 
-Godel 0.7.0-beta.3 is experimental software. A stable release is reserved
+Godel 0.8.0 is experimental software. A stable release is reserved
 for 1.0.0 after sustained real-system testing. It is Linux-only and relies
 on pidfds for its preferred supervision path (Linux 5.3+) and `cgroup.kill`
 for full cgroup tree cleanup (Linux 5.14+). The SIGCHLD and process-group
@@ -146,4 +163,4 @@ tested kernel list.
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+BSD-2-Clause. See [LICENSE](LICENSE).
