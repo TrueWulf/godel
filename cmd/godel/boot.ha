@@ -42,10 +42,17 @@ fn connect_console() void = {
 
 fn run_child(s: *const godel::set, cfg: *const godel::service) never = {
 	let _ = rt::setsid();
-	// Move ourselves into the service cgroup before exec. The parent's
-	// attach races with our first fork: grandchildren born in the window
-	// would land in the root cgroup and survive cgroup.kill.
 	godel::attach(&cg, godel::svc_name(cfg), rt::getpid());
+	if (child_notify_w >= 0) {
+		if (rt::dup2(child_notify_w, child_notify_no) < 0) {
+			os::exit(126);
+		};
+	};
+	if (child_log_fd >= 0) {
+		if (rt::dup2(child_log_fd, 1) < 0 || rt::dup2(child_log_fd, 2) < 0) {
+			os::exit(126);
+		};
+	};
 	let argv: [godel::MAX_ARGS + 1]nullable *const u8 = [null...];
 	for (let i = 0z; i < cfg.argc: size; i += 1) {
 		argv[i] = &s.buf[cfg.argv_off[i]: size]: *const u8;

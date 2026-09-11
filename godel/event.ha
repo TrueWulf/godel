@@ -5,6 +5,7 @@ export def TAG_SIGNAL: u64 = 0xffff_ffff;
 export def TAG_TIMER: u64 = 0xffff_fffe;
 export def TAG_RESCUE: u64 = 0xffff_fffd;
 export def TAG_DYING_BASE: u64 = 0x100;
+export def TAG_NOTIFY_BASE: u64 = 0x200;
 
 export fn now_ms() i64 = {
 	let ts = rt::timespec { tv_sec = 0, tv_nsec = 0 };
@@ -136,7 +137,6 @@ export fn pidfd_open(pid: int) (void | int) = {
 	};
 };
 
-// Returns void when the child has not exited (or was already reaped).
 export fn wait_pid_nohang(pid: int) (void | u32) = {
 	let st: int = 0;
 	for (true) {
@@ -151,9 +151,6 @@ export fn wait_pid_nohang(pid: int) (void | u32) = {
 	};
 };
 
-// Reaps any exited child, tracked or not. PID 1 inherits orphans whose
-// parents died; leaving them unreaped leaks zombie entries. Returns void
-// when no child has exited yet.
 export fn wait_any_nohang() (void | (int, u32)) = {
 	let st: int = 0;
 	for (true) {

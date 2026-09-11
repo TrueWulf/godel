@@ -13,6 +13,9 @@ export def NO_INDEX: u8 = 0xff;
 export type restart = enum u8 { always, on_failure, none };
 export type service_kind = enum u8 { long_running, oneshot };
 
+export def MIN_NOTIFICATION_FD: u32 = 3;
+export def MAX_NOTIFICATION_FD: u32 = 1024;
+
 export type service = struct {
 	name: [MAX_NAME_LEN + 1]u8,
 	name_len: u8,
@@ -29,6 +32,7 @@ export type service = struct {
 	line: size,
 	restart: restart,
 	kind: service_kind,
+	notification_fd: u16,
 	restart_limit: u32,
 	restart_delay_ms: i64,
 	shutdown_timeout_ms: i64,
@@ -224,12 +228,6 @@ export fn parse(s: *set, source: []u8) (void | diag) = {
 	};
 };
 
-// Scans one whitespace-separated word from buf[rd..end] with shell-like
-// quoting and writes its content to buf[wr..]. Because quoted text only
-// shrinks a word, the destination never overtakes the source and no
-// allocation is needed. Quotes may be concatenated with bare characters.
-// Outside quotes, a backslash escapes the next byte; inside double quotes
-// only \" and \\ are special. Returns (off, len, next_rd, next_wr).
 fn scan_word(
 	buf: []u8,
 	rd: size,
@@ -423,6 +421,24 @@ fn apply_key(
 		};
 		return;
 	};
+	if (eqs(key, "notification-fd")) {
+		const n = match (parse_u32(value)) {
+		case void =>
+			return diag { line = line_no, msg = "notification-fd must be a number" };
+		case let n: u32 => yield n;
+		};
+		if (n < MIN_NOTIFICATION_FD) {
+			return diag {
+				line = line_no,
+				msg = "notification-fd must be 3 or higher",
+			};
+		};
+		if (n > MAX_NOTIFICATION_FD) {
+			return diag { line = line_no, msg = "notification-fd too large" };
+		};
+		svc.notification_fd = n: u16;
+		return;
+	};
 	if (eqs(key, "restart_limit")) {
 		svc.restart_limit = match (parse_u32(value)) {
 		case void =>
@@ -490,6 +506,56 @@ export fn start_order(s: *const set, order: *[MAX_SERVICES]size) size = {
 			if (ready) {
 				order[total] = i;
 				launched[i] = true;
+				total += 1;
+				progress = true;
+			};
+		};
+		if (!progress) break;
+	};
+	return total;
+};
+
+export fn dep_satisfied(cfg: *const service, r: *const runtime) bool = {
+	const completed = r.exited && classify(r.last_status) is void;
+	const started = if (cfg.kind == service_kind::oneshot)
+		r.pid > 0 || completed
+	else
+		r.pid > 0;
+	if (!started) return false;
+	if (cfg.notification_fd == 0) return true;
+	return r.ready || completed;
+};
+
+export fn ready_starts(
+	s: *const set,
+	rts: []const runtime,
+	order: *[MAX_SERVICES]size,
+) size = {
+	let eligible: [MAX_SERVICES]bool = [false...];
+	let total: size = 0;
+	for (total < s.count) {
+		let progress = false;
+		for (let i = 0z; i < s.count; i += 1) {
+			if (eligible[i]) continue;
+			let ok = true;
+			const svc = &s.services[i];
+			for (let slot = 0z; slot < svc.after_len: size; slot += 1) {
+				const dep = svc.after[slot];
+				if (dep == NO_INDEX) continue;
+				if (!eligible[dep]) {
+					ok = false;
+					break;
+				};
+				const dc = &s.services[dep];
+				if (dc.notification_fd != 0
+						&& !dep_satisfied(dc, &rts[dep])) {
+					ok = false;
+					break;
+				};
+			};
+			if (ok) {
+				order[total] = i;
+				eligible[i] = true;
 				total += 1;
 				progress = true;
 			};

@@ -16,9 +16,6 @@ export fn classify(status: u32) exitkind = {
 	return (status & 0x7f): u8;
 };
 
-// A restart decision is represented directly by its payload.  This keeps the
-// state machine exhaustive at every call site and avoids a meaningless delay
-// field for stop/give-up decisions.
 export type stopped = void;
 export type restart_in = i64;
 export type gave_up = void;
@@ -31,9 +28,17 @@ export type runtime = struct {
 	restarts: u32,
 	started_at: i64,
 	restart_at: i64,
+	ready: bool,
+	exited: bool,
+	last_status: u32,
+	finished: bool,
+	pending: bool,
 };
 
-export fn new_runtime() runtime = runtime { pidfd = -1, ... };
+export fn new_runtime() runtime = runtime {
+	pidfd = -1,
+	...
+};
 
 export fn on_exit(
 	r: *runtime,

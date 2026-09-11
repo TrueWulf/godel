@@ -4,7 +4,7 @@ use godel;
 use rt;
 use strings;
 
-def VERSION: str = "0.7.0-beta.3";
+def VERSION: str = "0.8.0";
 def SERVICES_CONF: str = "/etc/godel/services.conf";
 def CONSOLE_DEVICE: str = "/dev/console";
 def KILL_PHASE_MS: i64 = 1_000;
@@ -34,32 +34,33 @@ type dying_entry = struct {
 let dying: [godel::MAX_SERVICES]dying_entry =
 	[dying_entry { pidfd = -1, ... }...];
 
-// Statuses of children reaped before their supervisor looked at them.
-// PID 1 inherits orphans; their exits must never become zombies. This is
-// a small ring: once full, the oldest orphan status is overwritten.
+let notify_r: [godel::MAX_SERVICES]int = [-1...];
+
+let child_log_fd: int = -1;
+let child_notify_w: int = -1;
+let child_notify_no: int = 0;
+
 type reaped_entry = struct { used: bool, pid: int, status: u32 };
 
 let reaped: [godel::MAX_SERVICES * 4]reaped_entry =
 	[reaped_entry { ... }...];
+let reaped_slot: size = 0;
 
 fn reap_orphans() void = {
-	let slot: size = 0;
 	for (true) {
 		const reaped_child = match (godel::wait_any_nohang()) {
 		case void => return;
 		case let r: (int, u32) => yield r;
 		};
-		reaped[slot] = reaped_entry {
+		reaped[reaped_slot] = reaped_entry {
 			used = true,
 			pid = reaped_child.0,
 			status = reaped_child.1,
 		};
-		slot = (slot + 1) % len(reaped);
+		reaped_slot = (reaped_slot + 1) % len(reaped);
 	};
 };
 
-// Looks up a child's exit status, preferring what the orphan reaper
-// already collected, and falls back to waiting on the pid directly.
 fn take_status(pid: int) (void | u32) = {
 	for (let i = 0z; i < len(reaped); i += 1) {
 		if (reaped[i].used && reaped[i].pid == pid) {
@@ -122,16 +123,17 @@ case godel::state::backoff => yield "backoff";
 case godel::state::gave_up => yield "gave-up";
 };
 
-// This file is intentionally a snapshot, not an RPC protocol: it remains
-// useful in a broken system and needs no daemon, socket, or allocation.
 fn write_status() void = {
 	let buffer: [4096]u8 = [0...];
 	let used: size = 0;
 	for (let i = 0z; i < sets[active_set].count; i += 1) {
 		const svc = &sets[active_set].services[i];
-		const line = fmt::bsprintf(buffer[used..], "{}\t{}\tpid={}\trestarts={}\n",
+		const ready = if (svc.notification_fd == 0) "-"
+			else if (svcs[i].ready) "yes" else "no";
+		const line = fmt::bsprintf(buffer[used..],
+			"{}\t{}\tpid={}\trestarts={}\tready={}\n",
 			nm(godel::svc_name(svc)), state_name(svcs[i].state),
-			svcs[i].pid: i64, svcs[i].restarts)!;
+			svcs[i].pid: i64, svcs[i].restarts, ready)!;
 		used += len(strings::toutf8(line));
 	};
 	match (rt::open("/run/godel/status",
@@ -220,18 +222,49 @@ export fn main() void = {
 					&& data < godel::TAG_DYING_BASE
 						+ godel::MAX_SERVICES: u64) {
 				on_dying_death((data - godel::TAG_DYING_BASE): size);
+			} else if (data >= godel::TAG_NOTIFY_BASE
+					&& data < godel::TAG_NOTIFY_BASE
+						+ godel::MAX_SERVICES: u64) {
+				on_notify((data - godel::TAG_NOTIFY_BASE): size);
 			};
 		};
 	};
 };
 
-
 fn start(index: size) void = {
 	const cfg = &sets[active_set].services[index];
 	const rtst = &svcs[index];
+	rtst.ready = false;
+	rtst.exited = false;
+	rtst.finished = false;
+	rtst.last_status = 0;
+	child_log_fd = -1;
+	child_notify_w = -1;
+	child_notify_no = cfg.notification_fd: int;
+	godel::close_fd(notify_r[index]);
+	notify_r[index] = -1;
+	open_service_log(cfg);
+	if (cfg.notification_fd > 0) {
+		let fds: [2]int = [-1, -1];
+		match (rt::pipe2(&fds, rt::O_CLOEXEC | rt::O_NONBLOCK)) {
+		case void =>
+			child_notify_w = fds[1];
+			notify_r[index] = fds[0];
+		case let e: rt::errno =>
+			rtst.ready = true;
+			logf("godel: {}: readiness pipe failed ({}), plain ordering\n",
+				nm(godel::svc_name(cfg)), e: i64);
+		};
+	};
 	const pid = match (rt::fork()) {
 	case let p: rt::pid_t => yield p;
 	case let e: rt::errno =>
+		godel::close_fd(child_log_fd);
+		child_log_fd = -1;
+		godel::close_fd(child_notify_w);
+		child_notify_w = -1;
+		godel::close_fd(notify_r[index]);
+		notify_r[index] = -1;
 		logf("godel: cannot start {}: fork failed\n", nm(godel::svc_name(cfg)));
 		rtst.state = godel::state::gave_up;
 		write_status();
@@ -239,6 +272,10 @@ fn start(index: size) void = {
 		return;
 	case void => run_child(&sets[active_set], cfg);
 	};
+	godel::close_fd(child_log_fd);
+	child_log_fd = -1;
+	godel::close_fd(child_notify_w);
+	child_notify_w = -1;
 	rtst.pid = pid;
 	rtst.state = godel::state::up;
 	rtst.started_at = godel::now_ms();
@@ -254,23 +291,62 @@ fn start(index: size) void = {
 		logf("godel: {}: pidfd unavailable, supervision degraded\n",
 			nm(godel::svc_name(cfg)));
 	};
+	if (notify_r[index] >= 0) {
+		if (!(godel::epoll_add(&ep, notify_r[index],
+				godel::TAG_NOTIFY_BASE + index: u64) is void)) {
+			godel::close_fd(notify_r[index]);
+			notify_r[index] = -1;
+			rtst.ready = true;
+			logf("godel: {}: readiness registration failed, plain ordering\n",
+				nm(godel::svc_name(cfg)));
+		};
+	};
 	if (!godel::attach(&cg, godel::svc_name(cfg), pid)) {
-		// The child attaches itself before exec; this only fires when
-		// the child died before exec or cgroups broke mid-boot.
 		logf("godel: {}: cgroup attach failed\n", nm(godel::svc_name(cfg)));
 	};
 	logf("godel: started {} (pid {})\n", nm(godel::svc_name(cfg)), pid: i64);
 	write_status();
 };
 
+fn on_notify(index: size) void = {
+	const fd = notify_r[index];
+	if (fd < 0) return;
+	let buf: [128]u8 = [0...];
+	let signalled = false;
+	let saw_eof = false;
+	for (true) {
+		match (rt::read(fd, &buf[0]: *opaque, len(buf))) {
+		case let n: size =>
+			if (n == 0) {
+				saw_eof = true;
+				break;
+			};
+			for (let k = 0z; k < n; k += 1) {
+				if (buf[k] == '\n') signalled = true;
+			};
+		case => break;
+		};
+	};
+	if (saw_eof && !signalled
+			&& sets[active_set].services[index].kind != godel::service_kind::oneshot) {
+		logf("godel: {} closed its readiness pipe without a newline\n",
+			nm(godel::svc_name(&sets[active_set].services[index])));
+	};
+	if (!signalled || svcs[index].ready) return;
+	svcs[index].ready = true;
+	logf("godel: {} is ready after {} ms\n",
+		nm(godel::svc_name(&sets[active_set].services[index])),
+		godel::now_ms() - svcs[index].started_at);
+	write_status();
+	pump_starts();
+};
 
 fn stop_service(index: size) void = {
 	const rtst = &svcs[index];
 	if (rtst.pid <= 0) return;
 	const name = godel::svc_name(&sets[active_set].services[index]);
-	// Graceful phase: SIGTERM to the whole process group. The cgroup tree
-	// is left alone until the SIGKILL escalation so services get their
-	// shutdown deadline.
+	godel::close_fd(notify_r[index]);
+	notify_r[index] = -1;
 	godel::kill_process_group(rtst.pid, rt::SIGTERM);
 	const had_cgroup = cg.enabled;
 	for (let s = 0z; s < godel::MAX_SERVICES; s += 1) {
@@ -301,7 +377,10 @@ fn stop_service(index: size) void = {
 
 fn on_service_death(index: size) void = {
 	const status = match (take_status(svcs[index].pid)) {
-	case void => return;
+	case void =>
+		logf("godel: {} signalled but has no status yet\n",
+			nm(godel::svc_name(&sets[active_set].services[index])));
+		return;
 	case let s: u32 => yield s;
 	};
 	on_service_exit(index, status);
@@ -317,7 +396,11 @@ fn on_service_exit(index: size, status: u32) void = {
 		godel::close_fd(rtst.pidfd);
 		rtst.pidfd = -1;
 	};
+	godel::close_fd(notify_r[index]);
+	notify_r[index] = -1;
 	rtst.pid = 0;
+	rtst.exited = true;
+	rtst.last_status = status;
 	const uptime = now - rtst.started_at;
 	let _ = godel::kill_tree(&cg, godel::svc_name(cfg));
 	godel::release(&cg, godel::svc_name(cfg));
@@ -328,6 +411,9 @@ fn on_service_exit(index: size, status: u32) void = {
 		return;
 	};
 	const decision = godel::on_exit(rtst, cfg, status, now);
+	if (decision is godel::stopped && godel::classify(status) is void) {
+		rtst.finished = true;
+	};
 	match (godel::classify(status)) {
 	case void => match (decision) {
 		case godel::stopped => logf("godel: {} exited cleanly after {} ms\n", nm(godel::svc_name(cfg)), uptime);
@@ -346,6 +432,7 @@ fn on_service_exit(index: size, status: u32) void = {
 	};
 	};
 	write_status();
+	pump_starts();
 	if (shutdown.active && all_stopped()) finish_shutdown();
 	check_recovery();
 };
@@ -393,8 +480,6 @@ fn handle_signal(sig: u8) void = {
 	};
 };
 
-// pidfds are preferred, but SIGCHLD ensures a service remains supervised on
-// kernels where pidfd_open is unavailable or an epoll registration fails.
 fn reap_unobserved_children() void = {
 	for (let i = 0z; i < sets[active_set].count; i += 1) {
 		if (svcs[i].pid <= 0 || svcs[i].pidfd >= 0) continue;
@@ -421,7 +506,6 @@ fn reap_unobserved_children() void = {
 	};
 	write_status();
 };
-
 
 fn begin_shutdown(mode: shutdown_action) void = {
 	if (shutdown.active) {
@@ -460,7 +544,6 @@ fn on_timer() void = {
 				if (svcs[i].pid > 0) {
 					godel::kill_process_group(svcs[i].pid, rt::SIGKILL);
 				};
-				// Sweep orphaned processes that escaped their parent.
 				let _ = godel::kill_tree(&cg,
 					godel::svc_name(&sets[active_set].services[i]));
 			};
