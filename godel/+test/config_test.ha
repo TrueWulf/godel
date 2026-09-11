@@ -183,3 +183,93 @@ after = a
 	assert(parse_duration(strings::toutf8("abc")) is void);
 	assert(parse_duration(strings::toutf8("")) is void);
 };
+
+@test fn command_accepts_double_quoted_argument() void = {
+	let s = set { ... };
+	parse_ok(&s, "[service \"a\"]\ncommand = /bin/sh -c \"echo hello world\"\n");
+	const svc = &s.services[0];
+	assert(svc.argc == 3);
+	assert(bytes::equal(svc_arg(&s, svc, 0), strings::toutf8("/bin/sh")));
+	assert(bytes::equal(svc_arg(&s, svc, 1), strings::toutf8("-c")));
+	assert(bytes::equal(svc_arg(&s, svc, 2), strings::toutf8("echo hello world")));
+};
+
+@test fn command_accepts_single_quoted_argument() void = {
+	let s = set { ... };
+	parse_ok(&s, "[service \"a\"]\ncommand = /bin/echo 'a b  c'\n");
+	const svc = &s.services[0];
+	assert(svc.argc == 2);
+	assert(bytes::equal(svc_arg(&s, svc, 1), strings::toutf8("a b  c")));
+};
+
+@test fn command_concatenates_quoted_and_bare_segments() void = {
+	let s = set { ... };
+	parse_ok(&s, "[service \"a\"]\ncommand = /bin/echo pre\"mid dle\"'suf'\n");
+	const svc = &s.services[0];
+	assert(svc.argc == 2);
+	assert(bytes::equal(svc_arg(&s, svc, 1), strings::toutf8("premid dlesuf")));
+};
+
+@test fn command_outside_backslash_escapes_one_byte() void = {
+	let s = set { ... };
+	parse_ok(&s, "[service \"a\"]\ncommand = /bin/echo a\\ b\n");
+	const svc = &s.services[0];
+	assert(svc.argc == 2);
+	assert(bytes::equal(svc_arg(&s, svc, 1), strings::toutf8("a b")));
+};
+
+@test fn command_double_quotes_keep_most_backslashes() void = {
+	let s = set { ... };
+	parse_ok(&s, "[service \"a\"]\ncommand = /bin/echo \"a\\nb\\\"c\"\n");
+	const svc = &s.services[0];
+	assert(svc.argc == 2);
+	assert(bytes::equal(svc_arg(&s, svc, 1), strings::toutf8("a\\nb\"c")));
+};
+
+@test fn command_accepts_empty_quoted_argument() void = {
+	let s = set { ... };
+	parse_ok(&s, "[service \"a\"]\ncommand = /bin/echo \"\" x\n");
+	const svc = &s.services[0];
+	assert(svc.argc == 3);
+	assert(len(svc_arg(&s, svc, 1)) == 0);
+	assert(bytes::equal(svc_arg(&s, svc, 2), strings::toutf8("x")));
+};
+
+@test fn rejects_unterminated_double_quote() void = {
+	let s = set { ... };
+	expect_diag(parse(&s, strings::toutf8(
+		"[service \"a\"]\ncommand = /bin/echo \"open\n")),
+		2, "unterminated quote");
+};
+
+@test fn rejects_unterminated_single_quote() void = {
+	let s = set { ... };
+	expect_diag(parse(&s, strings::toutf8(
+		"[service \"a\"]\ncommand = /bin/echo 'open\n")),
+		2, "unterminated quote");
+};
+
+@test fn env_accepts_quoted_value_with_spaces() void = {
+	let s = set { ... };
+	parse_ok(&s, "[service \"a\"]\ncommand = /bin/true\nenv = MSG=\"hello world\"\n");
+	const svc = &s.services[0];
+	assert(svc.envc == 1);
+	assert(bytes::equal(svc_env(&s, svc, 0), strings::toutf8("MSG=hello world")));
+};
+
+@test fn env_rejects_unterminated_quote() void = {
+	let s = set { ... };
+	expect_diag(parse(&s, strings::toutf8(
+		"[service \"a\"]\ncommand = /bin/true\nenv = MSG=\"hello\n")),
+		3, "unterminated quote");
+};
+
+@test fn env_concatenation_still_validates_name() void = {
+	let s = set { ... };
+	parse_ok(&s, "[service \"a\"]\ncommand = /bin/true\nenv = M\"S\"G=x\n");
+	const svc = &s.services[0];
+	assert(bytes::equal(svc_env(&s, svc, 0), strings::toutf8("MSG=x")));
+	expect_diag(parse(&s, strings::toutf8(
+		"[service \"a\"]\ncommand = /bin/true\nenv = N\"O\"T-VALID=yes\n")),
+		3, "env must be NAME=VALUE");
+};
