@@ -1,0 +1,19 @@
+# A service that ignores SIGTERM must still die on the shutdown deadline:
+# SIGTERM first, then the SIGKILL escalation sweeps the whole tree.
+
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+send printf '%s\n' '[service "stubborn"]' 'command = /bin/sh -c "trap \"\" TERM; while :; do sleep 1; done"' 'restart = never' 'shutdown_timeout = 2s' >> /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+verify started stubborn
+
+send godelctl poweroff
+expect Godel: shutting down timeout=15
+expect sending SIGKILL timeout=15
+expect powering off timeout=30

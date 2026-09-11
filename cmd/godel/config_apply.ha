@@ -68,6 +68,12 @@ fn apply_config(next: size) void = {
 	for (let i = 0z; i < sets[next].count; i += 1) {
 		const j = match_idx[i];
 		if (j == godel::NO_INDEX) continue;
+		if (i == j) {
+			// Same slot: keep the runtime, only reset the restart book.
+			svcs[i].restarts = 0;
+			svcs[i].restart_at = 0;
+			continue;
+		};
 		svcs[i] = svcs[j];
 		svcs[i].restarts = 0;
 		svcs[i].restart_at = 0;

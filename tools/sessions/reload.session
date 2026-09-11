@@ -1,0 +1,50 @@
+# Reload lifecycle over one session: add a oneshot, change it, remove it,
+# refuse an invalid configuration without disturbing running services,
+# then recover and power off.
+
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+comment add a oneshot service and reload
+send printf '[service "hello"]\ncommand = /bin/echo hello-added-by-reload\ntype = oneshot\nrestart = never\n' >> /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+verify hello-added-by-reload
+
+comment changing the command must replace the oneshot
+send sed -i s/hello-added-by-reload/hello-changed-by-reload/ /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+verify hello-changed-by-reload
+
+comment removing it must disappear from the snapshot
+send sed -i '/service "hello"/,$d' /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+send test $(godelctl status | grep -c hello) -eq 0 && echo hello-gone
+expect hello-gone timeout=10
+
+comment an invalid configuration must be refused and change nothing
+send echo garbage-line >> /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect reload refused timeout=15
+send test -d /proc/$(awk '$1=="ttyS0"{print $3}' /run/godel/status | cut -d= -f2) && echo ttyS0-still-running
+expect ttyS0-still-running timeout=10
+
+comment fixing the file must make reload work again
+send sed -i /^garbage-line$/d /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+
+comment graceful poweroff
+send godelctl poweroff
+expect Godel: shutting down timeout=30
+expect powering off timeout=30

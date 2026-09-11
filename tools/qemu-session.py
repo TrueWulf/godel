@@ -66,6 +66,12 @@ def parse_script(path: str):
                 actions.append(("send", argument + "\n", 0.0))
             elif verb == "write":
                 actions.append(("write", argument, 0.0))
+            elif verb == "verify":
+                # Deferred check: PATTERN must exist anywhere in the
+                # transcript read so far, regardless of consume position.
+                if not argument:
+                    fail("script line %d: verify needs a pattern" % number)
+                actions.append(("verify", argument, 0.0))
             elif verb == "sleep":
                 actions.append(("sleep", "", float(argument)))
             elif verb == "comment":
@@ -162,6 +168,13 @@ def main() -> None:
                 except BrokenPipeError:
                     fail("console closed before %s: %r" % (kind, action[1]))
                 continue
+            if kind == "verify":
+                if action[1] not in buffer:
+                    fail("verify failed: %r not in transcript so far:\n%s"
+                         % (action[1], buffer[-2000:]))
+                transcript.write(("---- verified: %s\n"
+                                  % action[1]).encode())
+                continue
             pattern, timeout = action[1], action[2]
             deadline = time.monotonic() + timeout
             while True:
@@ -171,6 +184,9 @@ def main() -> None:
                                      % (pattern, consumed, index, len(buffer)))
                 if index >= 0:
                     consumed = index + len(pattern)
+                    if os.environ.get("QEMU_SESSION_DEBUG"):
+                        sys.stderr.write("dbg: matched %r -> consumed=%d\n"
+                                         % (pattern, consumed))
                     break
                 if not pump(0.2):
                     if buffer.find(pattern, consumed) >= 0:
@@ -180,8 +196,11 @@ def main() -> None:
                          % (pattern, tail))
                 if time.monotonic() > deadline:
                     tail = buffer[-2000:]
-                    fail("timeout after %.0fs waiting for %r; tail:\n%s"
-                         % (timeout, pattern, tail))
+                    absolute = buffer.find(pattern)
+                    fail("timeout after %.0fs waiting for %r "
+                         "(consumed=%d, len=%d, first-occurrence=%d); tail:\n%s"
+                         % (timeout, pattern, consumed, len(buffer),
+                            absolute, tail))
         except SystemExit:
             stop(qemu)
             raise

@@ -229,8 +229,11 @@ fn stop_service(index: size) void = {
 	const rtst = &svcs[index];
 	if (rtst.pid <= 0) return;
 	const name = godel::svc_name(&sets[active_set].services[index]);
-	const had_cgroup = godel::kill_tree(&cg, name);
+	// Graceful phase: SIGTERM to the whole process group. The cgroup tree
+	// is left alone until the SIGKILL escalation so services get their
+	// shutdown deadline.
 	godel::kill_process_group(rtst.pid, rt::SIGTERM);
+	const had_cgroup = cg.enabled;
 	for (let s = 0z; s < godel::MAX_SERVICES; s += 1) {
 		const slot = &dying[s];
 		if (slot.used) continue;
@@ -415,6 +418,9 @@ fn on_timer() void = {
 				if (svcs[i].pid > 0) {
 					godel::kill_process_group(svcs[i].pid, rt::SIGKILL);
 				};
+				// Sweep orphaned processes that escaped their parent.
+				let _ = godel::kill_tree(&cg,
+					godel::svc_name(&sets[active_set].services[i]));
 			};
 			for (let i = 0z; i < godel::MAX_SERVICES; i += 1) {
 				if (dying[i].used && dying[i].pid > 0) {
