@@ -21,7 +21,7 @@ for session in tools/sessions/*.session; do
 	if [ "$name" = extras ]; then
 		extras="--extras"
 	fi
-	if ! python3 tools/qemu-session.py \
+	if ! bin/qemu-session \
 			--kernel "$kernel" \
 			--disk "$work/$name.ext4" \
 			--script "$session" \

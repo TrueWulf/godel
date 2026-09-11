@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0-beta.3 - 2026-09-11
+
+- Replaced the Python serial-console harness with a static Hare binary
+  (`cmd/qemu-session`, -k/-d/-s/-l/-a/-m/-x/-n, same session-script
+  format). The repository is now Hare and POSIX shell only; verified by
+  rerunning all eight system sessions and 15-cycle soaks on both test
+  kernels.
+- Fixed the harness not draining console output before a verify check,
+  which had made that check depend on output timing.
+
 ## 0.7.0-beta.2 - 2026-09-11
 
 - Fixed inherited-orphan zombies: PID 1 now reaps every exited child via

@@ -47,7 +47,7 @@ cp "$root/.image/disk.ext4" "$work"
 } > "$script"
 
 echo "soak: $cycles cycles on $(basename "$kernel"); transcript $log"
-python3 tools/qemu-session.py \
+bin/qemu-session \
 	--kernel "$kernel" \
 	--disk "$work" \
 	--script "$script" \

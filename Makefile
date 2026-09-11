@@ -5,10 +5,11 @@ export PATH := $(HOME)/tools/hare/bin:$(PATH)
 
 GODEL_SRC := $(wildcard cmd/godel/*.ha godel/*.ha)
 GODELCTL_SRC := $(wildcard cmd/godelctl/*.ha)
+QEMU_SESSION_SRC := $(wildcard cmd/qemu-session/*.ha)
 
 .PHONY: all test install image qemu-system qemu-reboot qemu-poweroff qemu-badconfig clean
 
-all: bin/godel bin/godelctl
+all: bin/godel bin/godelctl bin/qemu-session
 
 bin/godel: $(GODEL_SRC)
 	@mkdir -p bin
@@ -17,6 +18,10 @@ bin/godel: $(GODEL_SRC)
 bin/godelctl: $(GODELCTL_SRC)
 	@mkdir -p bin
 	$(HARE) build -o bin/godelctl ./cmd/godelctl
+
+bin/qemu-session: $(QEMU_SESSION_SRC)
+	@mkdir -p bin
+	$(HARE) build -o bin/qemu-session ./cmd/qemu-session
 
 test:
 	$(HARE) test ./godel

@@ -2,9 +2,8 @@
 
 ## Current Baseline
 
-- Current development version: `0.7.0-beta.2` (tagged `v0.7.0-beta.2`;
-  `v0.7.0-beta.1` was tagged mid-session, before the orphan-reaping and
-  cgroup-race fixes landed on top).
+- Current development version: `0.7.0-beta.3` (tagged `v0.7.0-beta.3`;
+  `v0.7.0-beta.1` and `.2` were tagged mid-session as fixes landed).
 - Host system: Artix Linux with dinit as PID 1. Leave that installation
   intact.
 - Godel now boots as PID 1 from a persistent ext4 QEMU disk image
