@@ -34,7 +34,7 @@ APPEND="console=ttyS0,115200 root=/dev/vda rw init=/sbin/godel" tools/run-system
 The serial console shows the Godel boot log and then a getty prompt:
 
 ```
-Godel 0.7.0-beta.1: starting
+Godel 0.7.0-beta.2: starting
 godel: cgroup v2 enabled
 ...
 Godel test image godel-vm on /dev/ttyS0

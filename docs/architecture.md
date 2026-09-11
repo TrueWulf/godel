@@ -17,9 +17,17 @@ features each path relies on.
   through epoll, no SIGCHLD scanning. When a pidfd cannot be opened or
   registered, Godel falls back to reaping in the SIGCHLD handler with
   `wait4(WNOHANG)`; supervision continues with coarser timing.
+- PID 1 inherits orphans whose parents died inside a service group. A
+  SIGCHLD pass reaps *all* exited children through `wait4(-1)`; statuses
+  of tracked services are taken from that ring buffer, and unknown
+  orphans are simply discarded — zombies never accumulate.
 - Cleanup uses cgroup v2 (one subgroup per service under
   `/sys/fs/cgroup/godel`): `cgroup.kill` (Linux 5.14+) sweeps orphaned
-  grandchildren. Without cgroup v2 the process group alone is used.
+  grandchildren. The child attaches itself to its cgroup *before*
+  `execve`, closing the race where grandchildren would be born outside
+  the group. Because kills are asynchronous, the directory removal
+  retries briefly; a stubborn group is reused by the next attach.
+  Without cgroup v2 the process group alone is used.
 
 ## Shutdown sequence
 

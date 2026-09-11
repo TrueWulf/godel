@@ -3,15 +3,18 @@ PREFIX ?= /usr/local
 DESTDIR ?=
 export PATH := $(HOME)/tools/hare/bin:$(PATH)
 
+GODEL_SRC := $(wildcard cmd/godel/*.ha godel/*.ha)
+GODELCTL_SRC := $(wildcard cmd/godelctl/*.ha)
+
 .PHONY: all test install image qemu-system qemu-reboot qemu-poweroff qemu-badconfig clean
 
 all: bin/godel bin/godelctl
 
-bin/godel:
+bin/godel: $(GODEL_SRC)
 	@mkdir -p bin
 	$(HARE) build -o bin/godel ./cmd/godel
 
-bin/godelctl:
+bin/godelctl: $(GODELCTL_SRC)
 	@mkdir -p bin
 	$(HARE) build -o bin/godelctl ./cmd/godelctl
 
@@ -22,7 +25,7 @@ install: bin/godel bin/godelctl
 	install -Dm755 bin/godel $(DESTDIR)$(PREFIX)/sbin/godel
 	install -Dm755 bin/godelctl $(DESTDIR)$(PREFIX)/bin/godelctl
 
-image:
+image: bin/godel bin/godelctl
 	tools/build-image.sh
 
 qemu-system: image

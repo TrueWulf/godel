@@ -151,6 +151,23 @@ export fn wait_pid_nohang(pid: int) (void | u32) = {
 	};
 };
 
+// Reaps any exited child, tracked or not. PID 1 inherits orphans whose
+// parents died; leaving them unreaped leaks zombie entries. Returns void
+// when no child has exited yet.
+export fn wait_any_nohang() (void | (int, u32)) = {
+	let st: int = 0;
+	for (true) {
+		match (rt::wait4(-1, &st, rt::WNOHANG, null)) {
+		case let child: rt::pid_t =>
+			if (child == 0) return;
+			return (child, st: u32);
+		case let e: rt::errno =>
+			if (e == rt::EINTR) continue;
+			return;
+		};
+	};
+};
+
 export fn kill_process_group(pgid: int, sig: int) void = {
 	if (pgid > 0) {
 		let _ = rt::kill(-pgid, sig);

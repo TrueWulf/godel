@@ -52,7 +52,8 @@ export fn main() void = {
 	match (rt::kill(1, sig)) {
 	case void => os::exit(0);
 	case let e: rt::errno =>
-		fmt::errorfln("godelctl: cannot signal PID 1: {}", e: i64)!;
+		fmt::errorfln("godelctl: cannot signal PID 1 ({}): {}",
+			args[1], rt::strerror(e))!;
 		os::exit(1);
 	};
 };

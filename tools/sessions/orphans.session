@@ -1,0 +1,31 @@
+# A killed service leaves no orphans: children that were stray inside the
+# service cgroup must die with it (cgroup.kill), the process must not
+# linger as a zombie under PID 1, and the cgroup itself must be released.
+# Counters use [s]leep so the counting process never matches itself.
+
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+send printf '%s\n' '[service "orphans"]' 'command = /bin/sh -c "sleep 500 & sleep 500"' 'restart = never' >> /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+send echo cgroup-present-$(test -d /sys/fs/cgroup/godel/orphans && echo yes || echo no)
+expect cgroup-present-yes timeout=10
+
+comment SIGKILL the shell; both sleep 500 children live inside the cgroup
+send pid=$(awk '$1=="orphans"{print $3}' /run/godel/status | cut -d= -f2); kill -9 $pid
+expect godel# timeout=10
+expect killed by signal 9 timeout=15
+sleep 2
+send echo stray-$(ps | awk '$0 ~ /[s]leep 500/ {c++} END {print c+0}') zombie-$(ps | awk '$0 ~ /[[]sleep[]]/ {c++} END {print c+0}')
+expect stray-0 timeout=15
+expect zombie-0 timeout=15
+send echo cgroup-released-$(test ! -d /sys/fs/cgroup/godel/orphans && echo yes || echo no)
+expect cgroup-released-yes timeout=10
+
+send godelctl poweroff
+expect powering off timeout=30
