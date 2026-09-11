@@ -1,8 +1,8 @@
-# Godel 0.7.0-beta.1 Benchmarks
+# Godel 0.7.0-beta.3 Benchmarks
 
 Godel is intentionally small rather than benchmark-driven. These
 measurements were taken on the development machine (Artix Linux,
-x86_64) during the 0.7.0-beta.1 session, from the QEMU test image
+x86_64) during the 0.7.0-beta sessions, from the QEMU test image
 described in `docs/first-boot.md`: Godel boots from an ext4 virtio disk
 as PID 1 with eight services, including agetty on two consoles.
 
@@ -16,6 +16,9 @@ as PID 1 with eight services, including agetty on two consoles.
 | Incremental build (warm Hare cache) | 30 ms |
 | Build from empty Hare cache | 675 ms |
 | Unit tests | 46 |
+| PID 1 source, `cmd/godel` + `godel/` | 1873 lines of Hare |
+| `godelctl` source | 59 lines of Hare |
+| Test harness + tooling, host side | ~950 lines of Hare and shell |
 
 "Ready" is Godel's own `Godel: ready in N ms` log line: config parsed,
 all services forked, event loop entered. The 105 boot samples come from

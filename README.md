@@ -135,7 +135,7 @@ process.
 
 ## Status
 
-Godel 0.7.0-beta.2 is experimental software. A stable release is reserved
+Godel 0.7.0-beta.3 is experimental software. A stable release is reserved
 for 1.0.0 after sustained real-system testing. It is Linux-only and relies
 on pidfds for its preferred supervision path (Linux 5.3+) and `cgroup.kill`
 for full cgroup tree cleanup (Linux 5.14+). The SIGCHLD and process-group

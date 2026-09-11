@@ -4,7 +4,7 @@ use godel;
 use rt;
 use strings;
 
-def VERSION: str = "0.7.0-beta.2";
+def VERSION: str = "0.7.0-beta.3";
 def SERVICES_CONF: str = "/etc/godel/services.conf";
 def CONSOLE_DEVICE: str = "/dev/console";
 def KILL_PHASE_MS: i64 = 1_000;

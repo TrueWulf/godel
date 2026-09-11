@@ -8,8 +8,8 @@ written; the host system, bootloader, and `/boot` are never touched.
 
 - Hare 0.26.0.1 or newer (`HARE=/path/to/hare` overrides the default)
 - `qemu-system-x86_64`
-- `mke2fs` (e2fsprogs), `cpio`, `curl` (first run only, to fetch a static
-  busybox), and Python 3 for the scripted console sessions
+- `mke2fs` (e2fsprogs), `cpio`, and `curl` (first run only, to fetch a
+  static busybox)
 - A Linux kernel with virtio-blk and ext4 built in, for example
   `/boot/vmlinuz-linux-lts` or `/boot/vmlinuz-linux-zen`
 
@@ -34,7 +34,7 @@ APPEND="console=ttyS0,115200 root=/dev/vda rw init=/sbin/godel" tools/run-system
 The serial console shows the Godel boot log and then a getty prompt:
 
 ```
-Godel 0.7.0-beta.2: starting
+Godel 0.7.0-beta.3: starting
 godel: cgroup v2 enabled
 ...
 Godel test image godel-vm on /dev/ttyS0
