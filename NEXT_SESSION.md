@@ -23,16 +23,28 @@
 
 ## Candidate Work for 0.7.1 / 0.8
 
-1. Native mount unit only if the sh -c oneshots demonstrably lose real
+1. Readiness protocol: `after` is start ordering only. Add a minimal
+   readiness mechanism, ideally wire-compatible with the
+   `notification-fd` convention already used by s6, dinit, and nitro,
+   so service packs stay portable.
+2. Per-service output: route service stdout/stderr to supervised
+   per-service log files (or a dedicated logger service) instead of the
+   shared console; write to a mounted /var/log when the optional /var
+   disk is present.
+3. fsck hook for the root filesystem before the remount-rw oneshot.
+4. Native mount unit only if the sh -c oneshots demonstrably lose real
    failure modes; keep explicit commands otherwise.
-2. Readiness beyond start ordering: document the oneshot-chaining
-   pattern more loudly or add a minimal `ready_file =` check.
-3. Real-hardware test on a non-critical machine with a separate,
+5. Real-hardware test on a non-critical machine with a separate,
    manually recoverable GRUB entry; never touch the host's
    `/boot/grub/grub.cfg`.
-4. QEMU CI once runner capacity allows (`make test-system` under KVM).
-5. Persistence: point `/run/godel/godel.log` at a mounted `/var/log`
-   when the optional `/var` disk is present.
+6. QEMU CI once runner capacity allows (`make test-system` under KVM).
+7. Comparison note (docs/comparison.md) against nitro (leahneukirchen,
+   0.8.1, used by dérive in core/), runit, s6, and dinit with honest
+   feature and size tables, before showing Godel anywhere publicly.
+8. License review: GPL-3.0-or-later is a hard mismatch for
+   public-domain/ISC-leaning distributions like dérive; decide whether
+   to keep it or relicense/mitigate before pitching Godel as an
+   alternative to their init stack.
 
 ## What Must Not Happen
 
