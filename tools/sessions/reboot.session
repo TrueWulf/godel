@@ -1,0 +1,31 @@
+# Reboot over the godelctl interface: a marker written before the reboot
+# must survive on the persistent root disk and the new boot must be fresh.
+
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+send echo marker-before-reboot > /root/marker.txt; sync
+expect godel# timeout=10
+send godelctl reboot
+expect Godel: shutting down timeout=30
+expect rebooting timeout=30
+
+comment the next login prompt belongs to a fresh boot
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+send cut -d. -f1 /proc/uptime | test $(cat) -lt 60 && echo fresh-boot
+expect fresh-boot timeout=10
+send cat /root/marker.txt
+expect marker-before-reboot timeout=10
+
+comment graceful poweroff
+send godelctl poweroff
+expect Godel: shutting down timeout=30
+expect powering off timeout=30

@@ -1,0 +1,22 @@
+# With the optional disks attached, the mount-home and mount-var oneshots
+# must actually mount /dev/vdb and /dev/vdc.
+
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+send mountpoint -q /home && echo home-mounted
+expect home-mounted timeout=15
+send cat /home/marker.txt
+expect godel home extra disk timeout=10
+
+send mountpoint -q /var && echo var-mounted
+expect var-mounted timeout=15
+send cat /var/marker.txt
+expect godel var extra disk timeout=10
+
+send godelctl poweroff
+expect Godel: shutting down timeout=30
+expect powering off timeout=30

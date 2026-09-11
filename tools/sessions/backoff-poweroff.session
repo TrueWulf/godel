@@ -1,0 +1,21 @@
+# A service stuck in restart backoff must not block or corrupt a
+# shutdown: power off while the crasher is between restarts.
+
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+send printf '[service "crasher"]\ncommand = /bin/false\ntype = service\nrestart = on-failure\nrestart_limit = 10\nrestart_delay = 500ms\n' >> /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+
+comment let the crasher fall into exponential backoff
+sleep 6
+verify restarting in
+
+send godelctl poweroff
+expect Godel: shutting down timeout=30
+expect powering off timeout=30
