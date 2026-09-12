@@ -6,6 +6,11 @@ use rt;
 
 const USAGE: str = "usage: godelctl status|reload|reboot|poweroff";
 
+fn running_under_godel() bool = match (os::stat("/run/godel/status")) {
+case let st: fs::filestat => yield fs::isfile(st.mode);
+case => yield false;
+};
+
 fn signal_for(command: str) (void | int) = switch (command) {
 case "reload" => yield rt::SIGHUP;
 case "reboot" => yield rt::SIGUSR1;
@@ -39,6 +44,10 @@ export fn main() void = {
 	};
 	if (args[1] == "status") {
 		os::exit(print_status());
+	};
+	if (!running_under_godel()) {
+		fmt::errorln("godelctl: Godel is not running (no /run/godel/status); refusing to signal PID 1")!;
+		os::exit(1);
 	};
 	const sig = match (signal_for(args[1])) {
 	case void =>
