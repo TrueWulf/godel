@@ -1,12 +1,12 @@
 <h1 align="center"><img src="assets/godel-wordmark.png" alt="godel" width="330"></h1>
 
-<p align="center">A static Linux init and service supervisor written in Hare.</p>
+<div align="center">
 
-<p align="center">
+A static Linux init and service supervisor written in Hare.
 
 [Architecture](docs/architecture.md) · [First boot](docs/first-boot.md) · [Migration](docs/migration.md) · [Comparison](docs/comparison.md) · [Benchmarks](docs/benchmarks.md) · [License](LICENSE)
 
-</p>
+</div>
 
 Godel is one static binary, built without libc, that runs as PID 1 and
 supervises every service on the machine. It is written in Hare, about
