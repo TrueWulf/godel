@@ -4,8 +4,7 @@ use godel;
 use rt;
 use strings;
 
-def VERSION: str = "0.8.0";
-def SERVICES_CONF: str = "/etc/godel/services.conf";
+def VERSION: str = "0.9.0";
 def CONSOLE_DEVICE: str = "/dev/console";
 def KILL_PHASE_MS: i64 = 1_000;
 def SHUTDOWN_CAP_MS: i64 = 30_000;
@@ -107,7 +106,14 @@ const FS_SYSFS: [6]u8 = ['s', 'y', 's', 'f', 's', 0];
 const FS_DEVTMPFS: [9]u8 = ['d', 'e', 'v', 't', 'm', 'p', 'f', 's', 0];
 const FS_TMPFS: [6]u8 = ['t', 'm', 'p', 'f', 's', 0];
 const FS_CGROUP2: [8]u8 = ['c', 'g', 'r', 'o', 'u', 'p', '2', 0];
+const FS_DEVPTS: [7]u8 = ['d', 'e', 'v', 'p', 't', 's', 0];
 const MODE_0755: [10]u8 = ['m', 'o', 'd', 'e', '=', '0', '7', '5', '5', 0];
+const MODE_1777: [10]u8 = ['m', 'o', 'd', 'e', '=', '1', '7', '7', '7', 0];
+const DEVPTS_OPTS: [29]u8 = [
+	'g', 'i', 'd', '=', '5', ',',
+	'm', 'o', 'd', 'e', '=', '6', '2', '0', ',',
+	'p', 't', 'm', 'x', 'm', 'o', 'd', 'e', '=', '0', '6', '6', '6', 0,
+];
 const RESCUE_CS: [8]u8 = ['/', 'b', 'i', 'n', '/', 's', 'h', 0];
 
 fn logf(f: str, args: fmt::field...) void = {
@@ -129,7 +135,9 @@ fn write_status() void = {
 	for (let i = 0z; i < sets[active_set].count; i += 1) {
 		const svc = &sets[active_set].services[i];
 		const ready = if (svc.notification_fd == 0) "-"
-			else if (svcs[i].ready) "yes" else "no";
+			else if (svcs[i].ready) "yes"
+			else if (svcs[i].released) "timeout"
+			else "no";
 		const line = fmt::bsprintf(buffer[used..],
 			"{}\t{}\tpid={}\trestarts={}\tready={}\n",
 			nm(godel::svc_name(svc)), state_name(svcs[i].state),
@@ -164,8 +172,13 @@ fn setup_envp(envp: []nullable *const u8, envbufs: *[3][48]u8) size = {
 };
 
 export fn main() void = {
+	const args = os::args;
+	if (len(args) == 3 && args[1] == "-t") {
+		validate_path(args[2]);
+	};
 	if (rt::getpid() != 1) {
-		os::exit(1);
+		fmt::errorfln("usage: godel [-t PATH] (PID 1 only otherwise)")!;
+		os::exit(2);
 	};
 	mount_pseudo_filesystems();
 	mount_runtime();
@@ -177,6 +190,11 @@ export fn main() void = {
 	cg = godel::setup(strings::toutf8("/sys/fs/cgroup"));
 	if (cg.enabled) {
 		logf("godel: cgroup v2 enabled\n");
+		if (cg.accounting) {
+			logf("godel: memory accounting enabled\n");
+		} else {
+			logf("godel: memory accounting unavailable\n");
+		};
 	} else {
 		logf("godel: cgroup v2 unavailable, using process groups\n");
 	};
@@ -235,6 +253,7 @@ fn start(index: size) void = {
 	const cfg = &sets[active_set].services[index];
 	const rtst = &svcs[index];
 	rtst.ready = false;
+	rtst.released = false;
 	rtst.exited = false;
 	rtst.finished = false;
 	rtst.last_status = 0;
@@ -326,6 +345,10 @@ fn on_notify(index: size) void = {
 			};
 		case => break;
 		};
+	};
+	if (saw_eof) {
+		godel::close_fd(notify_r[index]);
+		notify_r[index] = -1;
 	};
 	if (saw_eof && !signalled
 			&& sets[active_set].services[index].kind != godel::service_kind::oneshot) {
@@ -568,6 +591,16 @@ fn on_timer() void = {
 		svcs[i].restart_at = 0;
 		start(i);
 	};
+	for (let i = 0z; i < sets[active_set].count; i += 1) {
+		const cfg = &sets[active_set].services[i];
+		if (!godel::readiness_due(cfg, &svcs[i], now)) continue;
+		svcs[i].released = true;
+		logf("godel: {}: readiness timeout after {} ms; failed, releasing dependents\n",
+			nm(godel::svc_name(cfg)), cfg.readiness_timeout_ms);
+		write_status();
+		stop_service(i);
+		pump_starts();
+	};
 };
 
 fn check_recovery() void = {
@@ -646,33 +679,46 @@ fn on_rescue_exit() void = {
 	write_status();
 	if (shutdown.active) return;
 	logf("godel: recovery shell exited\n");
-	let content_buf: [godel::BUF_CAPACITY]u8 = [0...];
-	let valid = false;
-	match (read_config_file(content_buf[..])) {
+	const next = active_set ^ 1;
+	match (load_from(next, CONF_FILE, CONF_DIR)) {
 	case void => void;
-	case let c: []u8 =>
-		valid = godel::parse(&sets[active_set ^ 1], c) is void;
-	};
-	if (valid) {
-		report_warnings(active_set ^ 1);
-		apply_config(active_set ^ 1);
-		recovery_used = false;
+	case let d: godel::diag =>
+		logf("godel: {}:{}: {}; no valid configuration to start\n",
+			src_path(d.file), d.line, d.msg);
+		begin_shutdown(shutdown_action::poweroff);
 		return;
 	};
-	logf("godel: no valid configuration to start\n");
-	begin_shutdown(shutdown_action::poweroff);
+	report_warnings(next);
+	apply_config(next);
+	recovery_used = false;
+};
+
+fn readiness_deadline(i: size) (void | i64) = {
+	if (i >= sets[active_set].count) return;
+	const cfg = &sets[active_set].services[i];
+	if (cfg.notification_fd == 0 || cfg.readiness_timeout_ms <= 0) return;
+	const r = &svcs[i];
+	if (r.state != godel::state::up || r.pid <= 0 || r.ready || r.released) {
+		return;
+	};
+	return r.started_at + cfg.readiness_timeout_ms;
 };
 
 fn arm_timer() void = {
 	let nearest: (void | i64) = void;
 	if (shutdown.active) nearest = shutdown.deadline;
 	for (let i = 0z; i < godel::MAX_SERVICES; i += 1) {
+		let cand: (void | i64) = void;
 		if (svcs[i].state == godel::state::backoff) {
-			nearest = match (nearest) {
-			case void => yield svcs[i].restart_at;
-			case let n: i64 =>
-				yield if (n < svcs[i].restart_at) n
-					else svcs[i].restart_at;
+			cand = svcs[i].restart_at;
+		} else {
+			cand = readiness_deadline(i);
+		};
+		match (cand) {
+		case void => void;
+		case let at: i64 => nearest = match (nearest) {
+			case void => yield at;
+			case let n: i64 => yield if (n < at) n else at;
 			};
 		};
 	};

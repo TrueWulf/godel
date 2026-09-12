@@ -19,6 +19,12 @@ fn mount_pseudo_filesystems() void = {
 	mount_one("sysfs", "/sys", &FS_SYSFS[0]: *const u8, 0, null);
 	mount_one("devtmpfs", "/dev", &FS_DEVTMPFS[0]: *const u8, 0,
 		&MODE_0755[0]: *opaque);
+	let _ = rt::mkdir("/dev/pts", 0o755);
+	mount_one("devpts", "/dev/pts", &FS_DEVPTS[0]: *const u8, 0,
+		&DEVPTS_OPTS[0]: *opaque);
+	let _ = rt::mkdir("/dev/shm", 0o1777);
+	mount_one("shm", "/dev/shm", &FS_TMPFS[0]: *const u8, 0,
+		&MODE_1777[0]: *opaque);
 	mount_one("cgroup2", "/sys/fs/cgroup", &FS_CGROUP2[0]: *const u8, 0, null);
 };
 
@@ -53,6 +59,7 @@ fn run_child(s: *const godel::set, cfg: *const godel::service) never = {
 			os::exit(126);
 		};
 	};
+	apply_run_as(s, cfg);
 	let argv: [godel::MAX_ARGS + 1]nullable *const u8 = [null...];
 	for (let i = 0z; i < cfg.argc: size; i += 1) {
 		argv[i] = &s.buf[cfg.argv_off[i]: size]: *const u8;
