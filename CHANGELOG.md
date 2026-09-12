@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.9.0 - 2026-09-12
+
+- Lifted the fixed configuration limits: the snapshot now holds 64
+  services in a 32 KiB buffer. Configuration merges two sources: the
+  single-file `/etc/godel/services.conf` (still fully supported) and a
+  scanned `/etc/godel/services.d/` directory read in name order, where
+  `sshd.conf` defines `[service "sshd"]` and a file must contain
+  exactly that one service. A duplicate service name across sources is
+  a diagnostic that refuses the whole configuration; diagnostics carry
+  the file name and line. Parsing stays allocation-free.
+- Added `godel -t PATH`: parse-only validation of a config file, a
+  config root, or a `services.d` directory, with `path:line: message`
+  diagnostics and a nonzero exit, so a configuration can be checked
+  without booting (the migration runbook's Stage 2 tool).
+- Added `readiness_timeout` (duration): a notified service that has not
+  signalled when the deadline passes is logged, stopped, marked
+  `ready=timeout` in the status snapshot, and its dependents are
+  released. Without the key an unready notified service still holds its
+  dependents indefinitely.
+- Added `run-as = user[:group]`: the child drops to one uid/gid after
+  the cgroup attach and before `execve` (`setresgid` then `setresuid`,
+  names resolved from `/etc/passwd` and `/etc/group`, numeric ids
+  accepted, no supplementary groups). An unresolvable user or group
+  exits 126 before exec with the reason in the service log. Changing
+  `run-as` now replaces the service on reload, like an argv change.
+- Logging: per-service log files are created with mode 0600; `log = no`
+  opts a service out of per-service logging and keeps the console; the
+  supervisor writes a wall-clock header line at every log (re)open.
+  The timestamp question was decided honestly: per-line prefixes are
+  impossible because the child writes the descriptor directly, so lines
+  between headers stay raw and untimestamped, and the header carries
+  the wall-clock time.
+- Non-root disk checks: the test image's `mount-home`/`mount-var`
+  oneshots now run `fsck.ext4 -p` on the extra disks before mounting
+  them, guarded by `mountpoint` so a mounted disk is never checked, and
+  leave a marker when the check ran; proven by a captured session with
+  forced-dirty extra disks.
+- The loader skips no validation steps when a source is missing: the
+  0.9.0 sessions caught an early return that skipped `after` resolution
+  whenever `services.d` did not exist, silently breaking readiness
+  gating at boot; fixed and covered by a session.
+- Reload matching now compares `run-as` alongside name, argv, and
+  `notification-fd`.
+- Twelve more unit tests (69 total) and three new system sessions
+  (`readytimeout`, `runas`, `direconfig`) on both test kernels; both
+  50-cycle boot/reboot soaks rerun with transcripts kept under
+  `.image/soak`.
+- Memory accounting: PID 1 enables `+memory` and `+pids` at the cgroup
+  v2 hierarchy root and then at the supervisor group, logging
+  `memory accounting enabled`; every service runs in its own group.
+- Real-hardware migration (Stage 3, Artix/GRUB) found three bugs, all
+  fixed and regression-covered: a closed readiness pipe was re-logged
+  forever and flooded the log (the fd is now closed on EOF,
+  `eofonce.session` proves exactly one line); `/dev/pts` and `/dev/shm`
+  were never mounted, breaking every PTY terminal (the boot mounts both,
+  `basic.session` asserts them); and the subtree_control write went only
+  to the supervisor group, so controllers were never available anywhere
+  (the hierarchy root is enabled first, with session assertions for the
+  root, the supervisor group, and a live per-service `memory.current`).
+
 ## 0.8.0 - 2026-09-11
 
 - Relicensed from GPL-3.0-or-later to BSD-2-Clause; the Hare standard

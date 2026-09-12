@@ -39,9 +39,15 @@ not cover the kernel interface.
 - cgroup v2 process-tree cleanup with process-group fallback
 - dependency ordering, restart policies, exponential backoff, and give-up
 - readiness opt-in per service (`notification-fd`), wire-compatible with
-  the s6/dinit/nitro convention; `after` gates on readiness where declared
+  the s6/dinit/nitro convention; `after` gates on readiness where declared,
+  with an optional `readiness_timeout` that releases dependents
+- single-file config plus a scanned `/etc/godel/services.d/` directory
+  (one service per file, name = file name) merging into one snapshot
+- `godel -t PATH`: parse-only validation with line-numbered diagnostics
 - per-service stdout/stderr logging under `/var/log/godel` (fallback
-  `/run/godel/logs`) with size rotation at restart
+  `/run/godel/logs`), mode 0600, supervisor wall-clock header at every
+  (re)open, size rotation at restart, `log = no` console opt-out
+- per-service `run-as = user[:group]` identity switching before exec
 - atomic SIGHUP config reload: invalid files never replace the active config
 - quote-aware `command` and `env` parsing (double/single quotes, escapes)
 - graceful shutdown: SIGTERM, service deadline, SIGKILL escalation, reboot
@@ -57,7 +63,7 @@ Requires Hare 0.26.0.1 or newer, a Linux host, and `make`.
 
 ```sh
 make          # build bin/godel and bin/godelctl
-make test     # 56 unit tests
+make test     # 69 unit tests
 ```
 
 The Makefile defaults to `~/tools/hare/bin/hare`; override it with
@@ -80,12 +86,14 @@ watch it restart, reload the config, reboot and power off —
 [`docs/first-boot.md`](docs/first-boot.md) walks through the whole flow.
 
 The scripted sessions in `tools/sessions/` prove the failure paths and
-the new subsystems: SIGKILL recovery, SIGTERM-trapping services,
+the subsystems: SIGKILL recovery, SIGTERM-trapping services,
 corrupted configurations rescued from the recovery shell, reload of
 added, changed, and removed oneshots, readiness gating with a late
-newline, per-service logs with rotation, an fsck hook on a forced-dirty
-ext4 root, and poweroff during restart backoff. An honest comparison
-with nitro, runit, s6, and dinit is in
+newline, a readiness timeout that releases stuck dependents, per-service
+logs with rotation, a service running under `run-as` with its own log,
+booting from `services.d` alone, an fsck hook on a forced-dirty ext4
+root and on non-root disks, and poweroff during restart backoff. An
+honest comparison with nitro, runit, s6, and dinit is in
 [`docs/comparison.md`](docs/comparison.md).
 
 Older initramfs smoke tests are still available:
@@ -117,20 +125,37 @@ after = network
 
 Supported keys are `command`, `after`, `restart` (`always`, `on-failure`, or
 `never`), `restart_limit`, `restart_delay`, `shutdown_timeout`, `env`,
-`type` (`service` or `oneshot`), and `notification-fd`. `after` is start
-ordering; a dependency that declares `notification-fd = N` (3..1024) makes
-its dependents wait until it writes a newline to fd N — the same convention
-s6, dinit, and nitro use. Plain ordering applies everywhere else, and a
-notified service that never signals holds its dependents. Limits are
-intentional and fixed: 16 services, 8 command arguments, 4 environment
-entries, 4 dependencies, and 31-byte names. See
+`type` (`service` or `oneshot`), `notification-fd`, `readiness_timeout`,
+`run-as`, and `log` (`yes`/`no`). `after` is start ordering; a dependency
+that declares `notification-fd = N` (3..1024) makes its dependents wait
+until it writes a newline to fd N — the same convention s6, dinit, and
+nitro use. `readiness_timeout = 5s` bounds that wait: at the deadline the
+service is stopped and marked failed, and its dependents start. Plain
+ordering applies everywhere else.
+
+`run-as = user[:group]` drops the service to one uid/gid after the cgroup
+attach, before `execve`; there are no supplementary groups. `log = no`
+keeps a service on the console instead of a per-service log file (for
+gettys on other vtys).
+
+The same snapshot also merges `/etc/godel/services.d/*.conf`, scanned in
+name order. A directory file holds exactly one service whose name equals
+the file name (`sshd.conf` defines `[service "sshd"]`); a duplicate name
+across sources is a diagnostic that refuses the whole configuration.
+`godel -t PATH` validates a file, a config root, or the directory with
+line-numbered diagnostics and a nonzero exit, without starting anything.
+Limits are intentional and fixed: 64 services, 8 command arguments,
+4 environment entries, 4 dependencies, and 31-byte names. See
 [`examples/services.conf`](examples/services.conf) for a bootable
 VM-oriented configuration.
 
 Service stdout and stderr are routed to `/var/log/godel/<name>.log`
-(fallback `/run/godel/logs/<name>.log` while the root is read-only), rotated
-to `<name>.log.1` at restart past 64 KiB; the console stays reserved for
-PID 1's messages.
+(fallback `/run/godel/logs/<name>.log` while the root is read-only), mode
+0600, rotated to `<name>.log.1` at restart past 64 KiB. The supervisor
+writes a wall-clock header line at every (re)open; the child's own output
+between headers is raw and untimestamped, because the child writes the
+file descriptor directly. The console stays reserved for PID 1's
+messages.
 
 `command` and `env` values are tokenized like a shell subset: double and
 single quotes group whitespace, backslash escapes the next byte outside
@@ -154,7 +179,7 @@ process.
 
 ## Status
 
-Godel 0.8.0 is experimental software. A stable release is reserved
+Godel 0.9.0 is experimental software. A stable release is reserved
 for 1.0.0 after sustained real-system testing. It is Linux-only and relies
 on pidfds for its preferred supervision path (Linux 5.3+) and `cgroup.kill`
 for full cgroup tree cleanup (Linux 5.14+). The SIGCHLD and process-group

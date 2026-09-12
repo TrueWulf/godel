@@ -34,7 +34,7 @@ APPEND="console=ttyS0,115200 root=/dev/vda ro init=/sbin/godel" tools/run-system
 The serial console shows the Godel boot log and then a getty prompt:
 
 ```
-Godel 0.8.0: starting
+Godel 0.9.0: starting
 godel: cgroup v2 enabled
 ...
 Godel test image godel-vm on /dev/ttyS0
@@ -55,10 +55,13 @@ godelctl reboot
 godelctl poweroff
 ```
 
-The service configuration lives in `/etc/godel/services.conf`. Edit it
-with `vi` (the image ships busybox applets only) and run `godelctl
-reload`. An invalid file is refused atomically: the running services are
-untouched and the refusal is logged with a line number.
+The service configuration lives in `/etc/godel/services.conf`, merged
+with any `/etc/godel/services.d/*.conf` files (one service per file,
+name = file name). Edit them with `vi` (the image ships busybox applets
+only) and run `godelctl reload`. An invalid configuration is refused
+atomically: the running services are untouched and the refusal is
+logged with the file name and line number. `godel -t
+/etc/godel/services.d` checks the same set without starting anything.
 
 Kill a supervised service and watch the restart policy:
 
