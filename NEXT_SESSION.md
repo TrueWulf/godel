@@ -99,10 +99,11 @@ kernel without manual input.
    service (PID 1 log copied to `/var/log/godel/supervisor.log` every
    5 s) is what made both diagnoses possible. Keep it.
 
-## In flight: migration kit v3 (migration/apply.sh)
+## In flight: migration kit v3 (now at ~/godel-host/apply.sh)
 
-apply.sh is idempotent and self-healing. One `sudo sh
-migration/apply.sh` run: installs `bin/godel` and `bin/godelctl` to
+The kit is machine-specific and no longer lives in the repository.
+One `sudo sh /home/truewulf/godel-host/apply.sh` run: installs
+`bin/godel` and `bin/godelctl` to
 `/usr/local`, rewrites `/etc/godel/services.d/*.conf` (14 services:
 fsck-root, hostname, rootfs-rw, mount-home, swap, net-lo, udev,
 udev-trigger, sysctl, dbus, elogind, networkmanager, getty-tty1,
@@ -154,7 +155,7 @@ console client for the same daemon — it talks to happd directly, Godel
 is irrelevant to it beyond the daemon being up.
 
 Live bring-up without a reboot (boot binary already parses services.d):
-`sudo sh migration/apply.sh` then `sudo godelctl reload`, then restart
+`sudo sh /home/truewulf/godel-host/apply.sh` then `sudo godelctl reload`, then restart
 the Happ GUI (it caches its "max reconnect attempts" state).
 
 ## Commit state (0.9.0 pre-release)
@@ -184,7 +185,7 @@ apply.sh run plus a reboot is needed to pick them up.
 
 ## What the user must do next
 
-1. `sudo sh /home/truewulf/godel-hare/migration/apply.sh`
+1. `sudo sh /home/truewulf/godel-host/apply.sh`
    (idempotent; installs the memory-accounting fix into
    `/usr/local/sbin/godel` and the new `happd.conf`)
 2. Reboot into `Artix Godel v3 (lts)`.
