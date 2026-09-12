@@ -10,7 +10,12 @@
   <a href="docs/first-boot.md">First boot</a> ·
   <a href="docs/migration.md">Migration</a> ·
   <a href="docs/comparison.md">Comparison</a> ·
-  <a href="docs/benchmarks.md">Benchmarks</a>
+  <a href="docs/benchmarks.md">Benchmarks</a> ·
+  <a href="LICENSE">BSD-2-Clause</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/license-BSD--2--Clause-blue.svg" alt="License: BSD-2-Clause">
 </p>
 
 Godel is for VMs, embedded images, and personal systems where a transparent
