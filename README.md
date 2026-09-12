@@ -8,6 +8,8 @@
   <a href="https://codeberg.org/TrueWulf/godel">Source</a> ·
   <a href="docs/architecture.md">Architecture</a> ·
   <a href="docs/first-boot.md">First boot</a> ·
+  <a href="docs/migration.md">Migration</a> ·
+  <a href="docs/comparison.md">Comparison</a> ·
   <a href="docs/benchmarks.md">Benchmarks</a>
 </p>
 
