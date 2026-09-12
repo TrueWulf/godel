@@ -15,6 +15,17 @@ expect var-mountpoint-yes timeout=15
 send cat /var/marker.txt
 expect godel var extra disk timeout=10
 
+comment the oneshots ran fsck on the dirty extra disks before mounting
+send ls /run/godel
+expect fsck-home-ran timeout=10
+expect fsck-var-ran timeout=10
+
+comment an explicit fsck pass on a recovered non-root disk reports clean
+send umount /home && fsck.ext4 -p /dev/vdb && mount /dev/vdb /home && echo home-fsck-clean
+expect home-fsck-clean timeout=15
+send umount /var && fsck.ext4 -p /dev/vdc && mount /dev/vdc /var && echo var-fsck-clean
+expect var-fsck-clean timeout=15
+
 send godelctl poweroff
 expect Godel: shutting down timeout=30
 expect powering off timeout=30

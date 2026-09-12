@@ -1,0 +1,26 @@
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+comment a notified service that closes its readiness fd and keeps running
+send printf '[service "closer"]\ncommand = /bin/sh -c "exec 3>&-; while :; do sleep 1; done"\nnotification-fd = 3\nrestart = never\n[service "aftercloser"]\ncommand = /bin/sleep 500\nafter = closer\nrestart = never\n' >> /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+sleep 3
+
+comment the closure is logged exactly once, not flooded
+send echo eofcount-$(grep -c 'closed its readiness pipe' /run/godel/godel.log)
+expect eofcount-1 timeout=10
+
+comment the service stays up and unready, still gating its dependent
+send echo closer-state-$(awk '$1=="closer"{print $2}' /run/godel/status)
+expect closer-state-up timeout=10
+send echo ac-$(awk '$1=="aftercloser"{print $2}' /run/godel/status)
+expect ac-stopped timeout=10
+
+send godelctl poweroff
+expect Godel: shutting down timeout=30
+expect powering off timeout=30

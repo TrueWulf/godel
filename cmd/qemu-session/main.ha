@@ -43,7 +43,7 @@ fn fail(msg: str) never = {
 
 fn usage() never = {
 	fmt::errorln(
-		"usage: qemu-session -k KERNEL -d DISK -s SCRIPT -l LOG [-a APPEND] [-m MEM] [-x] [-n]")!;
+		"usage: qemu-session -k KERNEL -d DISK -s SCRIPT -l LOG [-a APPEND] [-m MEM] [--extra DISK]... [-n]")!;
 	os::exit(1);
 };
 
@@ -236,7 +236,7 @@ export fn main() void = {
 	let log_path = "";
 	let cmdline = "console=ttyS0,115200 root=/dev/vda ro init=/sbin/godel panic=-1";
 	let memory = "256M";
-	let extras = false;
+	let extras: []str = [];
 	let noreboot = false;
 
 	const args = os::args;
@@ -255,8 +255,8 @@ export fn main() void = {
 			cmdline = next_arg(args, &i);
 		} else if (a == "-m" || a == "--memory") {
 			memory = next_arg(args, &i);
-		} else if (a == "-x" || a == "--extras") {
-			extras = true;
+		} else if (a == "--extra") {
+			append(extras, next_arg(args, &i))!;
 		} else if (a == "-n" || a == "--no-reboot") {
 			noreboot = true;
 		} else {
@@ -286,11 +286,10 @@ export fn main() void = {
 	append(qemu_args, "-append")!;
 	append(qemu_args, cmdline)!;
 	append(qemu_args, "-nographic")!;
-	if (extras) {
+	for (let k = 0z; k < len(extras); k += 1) {
 		append(qemu_args, "-drive")!;
-		append(qemu_args, "file=.image/home.ext4,format=raw,if=virtio")!;
-		append(qemu_args, "-drive")!;
-		append(qemu_args, "file=.image/var.ext4,format=raw,if=virtio")!;
+		append(qemu_args,
+			concat2(concat2("file=", extras[k]), ",format=raw,if=virtio"))!;
 	};
 	if (noreboot) {
 		append(qemu_args, "-no-reboot")!;
