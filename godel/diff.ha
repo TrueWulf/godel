@@ -10,7 +10,9 @@ export fn argv_equal(
 	for (let i = 0z; i < aa.argc: size; i += 1) {
 		if (!bytes::equal(svc_arg(a, aa, i), svc_arg(b, bb, i))) return false;
 	};
-	return aa.notification_fd == bb.notification_fd;
+	if (aa.notification_fd != bb.notification_fd) return false;
+	if (aa.runas_len != bb.runas_len) return false;
+	return bytes::equal(svc_runas(a, aa), svc_runas(b, bb));
 };
 
 export fn match_running(

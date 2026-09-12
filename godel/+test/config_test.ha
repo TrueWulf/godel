@@ -146,7 +146,7 @@ after = network
 @test fn rejects_no_services() void = {
 	let s = set { ... };
 	expect_diag(parse(&s, strings::toutf8("# nothing here\n")),
-		2, "no services defined");
+		0, "no services defined");
 };
 
 @test fn records_unknown_key_as_warning() void = {
@@ -305,4 +305,139 @@ after = a
 	expect_diag(parse(&s, strings::toutf8(
 		"[service \"a\"]\ncommand = /bin/true\nnotification-fd = 1025\n")),
 		3, "notification-fd too large");
+};
+
+@test fn parses_new_keys() void = {
+	let s = set { ... };
+	parse_ok(&s, "[service \"a\"]\ncommand = /bin/true\nreadiness_timeout = 5s\nrun-as = svc:svc\nlog = no\n");
+	const svc = &s.services[0];
+	assert(svc.readiness_timeout_ms == 5000);
+	assert(bytes::equal(svc_runas(&s, svc), strings::toutf8("svc:svc")));
+	assert(svc.log_disabled);
+};
+
+@test fn run_as_defaults_and_user_only_form() void = {
+	let s = set { ... };
+	parse_ok(&s, "[service \"a\"]\ncommand = /bin/true\nrun-as = backup\n[service \"b\"]\ncommand = /bin/true\n");
+	assert(len(svc_runas(&s, &s.services[1])) == 0);
+	assert(bytes::equal(svc_runas(&s, &s.services[0]), strings::toutf8("backup")));
+};
+
+@test fn rejects_bad_runas() void = {
+	let s = set { ... };
+	expect_diag(parse(&s, strings::toutf8(
+		"[service \"a\"]\ncommand = /bin/true\nrun-as = svc users extra\n")),
+		3, "run-as must be user or user:group");
+	expect_diag(parse(&s, strings::toutf8(
+		"[service \"a\"]\ncommand = /bin/true\nrun-as = svc:\n")),
+		3, "run-as must be user or user:group");
+	expect_diag(parse(&s, strings::toutf8(
+		"[service \"a\"]\ncommand = /bin/true\nrun-as = sv c\n")),
+		3, "run-as must be user or user:group");
+};
+
+@test fn rejects_bad_log_value() void = {
+	let s = set { ... };
+	expect_diag(parse(&s, strings::toutf8(
+		"[service \"a\"]\ncommand = /bin/true\nlog = maybe\n")),
+		3, "log must be yes or no");
+};
+
+@test fn readiness_timeout_without_notification_fd_warns() void = {
+	let s = set { ... };
+	parse_ok(&s, "[service \"a\"]\ncommand = /bin/true\nreadiness_timeout = 5s\n");
+	assert(s.warning_count == 1);
+	assert(s.warnings[0].msg == "readiness_timeout without notification-fd");
+	assert(s.services[0].readiness_timeout_ms == 5000);
+};
+
+@test fn rejects_bad_readiness_timeout() void = {
+	let s = set { ... };
+	expect_diag(parse(&s, strings::toutf8(
+		"[service \"a\"]\ncommand = /bin/true\nreadiness_timeout = soon\n")),
+		3, "duration must be like 250ms or 5s");
+};
+
+@test fn parse_file_merges_sources_and_resolves_cross_file_after() void = {
+	let s = set { ... };
+	reset_set(&s);
+	file_ok(&s, "[service \"base\"]\ncommand = /bin/true\n", 0);
+	file_ok(&s, "[service \"extra\"]\ncommand = /bin/true\nafter = base\n", 1);
+	assert(finish_set(&s) is void);
+	assert(s.count == 2);
+	assert(s.services[1].after[0] == 0);
+};
+
+fn file_ok(s: *set, src: str, file: u8) void = {
+	match (parse_file(s, strings::toutf8(src), file)) {
+	case void => void;
+	case let d: diag =>
+		abort(fmtstr2("unexpected diag in file ", d.file: i64,
+			" at line ", d.line: i64, ": ", d.msg));
+	};
+};
+
+let abortbuf2: [192]u8 = [0...];
+
+fn fmtstr2(a: str, b: i64, c: str, e: i64, f: str, g: str) str = {
+	let s = memio::fixed(abortbuf2);
+	fmt::fprintf(&s, "{}{}{}{}{}{}", a, b, c, e, f, g)!;
+	return memio::string(&s)!;
+};
+
+@test fn duplicate_across_sources_is_diagnostic_in_second_file() void = {
+	let s = set { ... };
+	reset_set(&s);
+	match (parse_file(&s, strings::toutf8("[service \"a\"]\ncommand = /bin/true\n"), 0)) {
+	case void => void;
+	case => abort("first file should parse");
+	};
+	const d = parse_file(&s, strings::toutf8("[service \"a\"]\ncommand = /bin/true\n"), 1) as diag;
+	assert(d.file == 1);
+	assert(d.line == 1);
+	assert(d.msg == "duplicate service name");
+};
+
+@test fn second_file_diags_carry_the_second_file_id() void = {
+	let s = set { ... };
+	reset_set(&s);
+	match (parse_file(&s, strings::toutf8("[service \"a\"]\ncommand = /bin/true\n"), 0)) {
+	case void => void;
+	case => abort("first file should parse");
+	};
+	const d = parse_file(&s, strings::toutf8("[service \"b\"]\nrestart = never\n"), 1) as diag;
+	assert(d.file == 1);
+	assert(d.line == 1);
+	assert(d.msg == "service has no command");
+};
+
+@test fn sixty_four_services_fit_and_sixty_five_do_not() void = {
+	let s = set { ... };
+	reset_set(&s);
+	let src: [48]u8 = [0...];
+	for (let i = 0z; i < 64; i += 1) {
+		let n = strings::toutf8("[service \"s");
+		src[..len(n)] = n;
+		let k = len(n);
+		if (i >= 10) {
+			src[k] = '0' + (i / 10): u8;
+			k += 1;
+		};
+		src[k] = '0' + (i % 10): u8;
+		k += 1;
+		n = strings::toutf8("\"]\ncommand = /bin/true\n");
+		src[k..k + len(n)] = n;
+		k += len(n);
+		match (parse_file(&s, src[..k], 0)) {
+		case void => void;
+		case let d: diag =>
+			abort(fmtstr2("diag ", i: i64,
+				" line ", d.line: i64, ": ", d.msg));
+		};
+	};
+	assert(s.count == 64);
+	let n = strings::toutf8("[service \"s64\"]\ncommand = /bin/true\n");
+	src[..len(n)] = n;
+	const d = parse_file(&s, src[..len(n)], 0) as diag;
+	assert(d.msg == "too many services");
 };
