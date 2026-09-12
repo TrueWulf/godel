@@ -98,17 +98,33 @@ The user's VPN is Happ (`happ-desktop-bin` 4.1.3): GUI `/usr/bin/happ`
 plus a root daemon `/opt/happ/bin/happd` (foreground, spawns
 `/opt/happ/bin/core/xray` and `/opt/happ/bin/tun/sing-box` for TUN).
 Under dinit it was started by `/etc/dinit.d/happd`; under Godel nothing
-started it — that was the "happd не работает" report. apply.sh now
-installs `happd.conf` (service 16): `restart = always` + `restart_delay
-= 5s` deliberately matching upstream `Restart=always`/`RestartSec=5s`
-(happd exits cleanly on a newer-client connection for self-upgrade, so
-`on-failure` would leave it dead), `after = networkmanager` (NM has a
-notification-fd, so startup waits for real network readiness). The
-full 16-service set validates with `godel -t`. The daemon also keeps
-its own `/var/log/happd.log`; stdout/stderr land in
+started it — that was the "happd не работает" report. The GUI log also
+showed two more independent gaps, both now covered:
+
+- **No `/dev/net/tun`**: the kernel has `CONFIG_TUN=m` and nothing loads
+  the module under Godel (systemd gets the node from kmod-static-nodes;
+  Godel has no such mechanism). apply.sh now installs a `tun` oneshot
+  (`modprobe tun`, service 17) and `happd` depends on it
+  (`after = networkmanager tun`). This fixes TUN for *any* sing-box/
+  wireguard-style client, not just Happ.
+- **Trimmed geosite.dat**: the bundled `/opt/happ/bin/core/geosite.dat`
+  is 67 KiB and lacks `category-gov-ru`, so every server whose routing
+  references it failed inside xray ("illegal domain rule"). Not a Godel
+  issue. Replaced with the full Loyalsoldier set (11 MiB, 118
+  categories, sha256 13e05b77…; a copy was left at /tmp/geosite.dat).
+
+happd.conf: `restart = always` + `restart_delay = 5s` deliberately
+matching upstream `Restart=always`/`RestartSec=5s` (happd exits cleanly
+on a newer-client connection for self-upgrade, so `on-failure` would
+leave it dead). The full 17-service set validates with `godel -t`. The
+daemon also keeps its own `/var/log/happd.log`; stdout/stderr land in
 `/var/log/godel/happd.log`. The user is writing a personal `vpn-cli`
 console client for the same daemon — it talks to happd directly, Godel
 is irrelevant to it beyond the daemon being up.
+
+Live bring-up without a reboot (boot binary already parses services.d):
+`sudo sh migration/apply.sh` then `sudo godelctl reload`, then restart
+the Happ GUI (it caches its "max reconnect attempts" state).
 
 ## Commit state (0.9.0 pre-release)
 

@@ -120,6 +120,19 @@ restart_delay = 2s
 after = dbus rootfs-rw
 EOF
 
+cat > /etc/godel/services.d/tun.conf <<'EOF'
+[service "tun"]
+command = /usr/bin/modprobe tun
+type = oneshot
+restart = never
+after = rootfs-rw udev-trigger
+EOF
+
+# No kmod-static-nodes exists under Godel, so nothing creates /dev/net/tun
+# on boot: TUN-based VPN daemons (happd/sing-box, wireguard-style setups)
+# would all fail with ENOENT. The tun module is CONFIG_TUN=m, so a oneshot
+# modprobe creates the device node via devtmpfs.
+
 # restart = always on purpose: on a newer-client connection happd exits
 # cleanly by design (self-upgrade re-exec), so on-failure would leave it
 # dead. Delay matches upstream RestartSec=5s.
@@ -128,7 +141,7 @@ cat > /etc/godel/services.d/happd.conf <<'EOF'
 command = /opt/happ/bin/happd
 restart = always
 restart_delay = 5s
-after = networkmanager
+after = networkmanager tun
 EOF
 
 cat > /etc/godel/services.d/getty-tty1.conf <<'EOF'
