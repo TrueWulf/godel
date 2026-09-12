@@ -53,10 +53,6 @@ export fn setup(base: []u8) controller = {
 		};
 	};
 	if (self.enabled) {
-		// Controllers only become available to a cgroup once they are
-		// enabled in its parent's subtree_control, so the hierarchy root
-		// must be enabled first; the supervisor level then passes them on
-		// to the per-service groups.
 		self.accounting = write_at(base, "cgroup.subtree_control",
 			strings::toutf8("+memory"));
 		write_root_file(&self, "cgroup.subtree_control",

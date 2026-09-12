@@ -403,6 +403,11 @@ fn on_service_death(index: size) void = {
 	case void =>
 		logf("godel: {} signalled but has no status yet\n",
 			nm(godel::svc_name(&sets[active_set].services[index])));
+		if (svcs[index].pidfd >= 0) {
+			godel::epoll_remove(&ep, svcs[index].pidfd);
+			godel::close_fd(svcs[index].pidfd);
+			svcs[index].pidfd = -1;
+		};
 		return;
 	case let s: u32 => yield s;
 	};
@@ -474,7 +479,14 @@ fn all_stopped() bool = {
 fn on_dying_death(slot_index: size) void = {
 	const slot = &dying[slot_index];
 	if (!slot.used) return;
-	if (take_status(slot.pid) is void) return;
+	if (take_status(slot.pid) is void) {
+		if (slot.pidfd >= 0) {
+			godel::epoll_remove(&ep, slot.pidfd);
+			godel::close_fd(slot.pidfd);
+			slot.pidfd = -1;
+		};
+		return;
+	};
 	if (slot.pidfd >= 0) {
 		godel::epoll_remove(&ep, slot.pidfd);
 		godel::close_fd(slot.pidfd);
@@ -664,7 +676,14 @@ fn run_rescue() never = {
 };
 
 fn on_rescue_death() void = {
-	if (take_status(rescue_pid) is void) return;
+	if (take_status(rescue_pid) is void) {
+		if (rescue_pidfd >= 0) {
+			godel::epoll_remove(&ep, rescue_pidfd);
+			godel::close_fd(rescue_pidfd);
+			rescue_pidfd = -1;
+		};
+		return;
+	};
 	on_rescue_exit();
 };
 
