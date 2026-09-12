@@ -32,7 +32,7 @@ documentation stay in English.
   the rotated EOF-spam fossil from boot 1 (1170 duplicate "closed its
   readiness pipe" lines) — kept as evidence.
 
-## Bugs found on real hardware (both fixed and regression-proven)
+## Bugs found on real hardware (all fixed and regression-proven)
 
 1. EOF on a readiness pipe was re-logged forever: `on_notify` logged
    the "closed its readiness pipe without a newline" case but never
@@ -64,6 +64,37 @@ documentation stay in English.
    and a live `beacon-memory-file-ok` (markers built via `$m` so the
    terminal echo can never satisfy the expect); 69 unit tests and
    15/15 system sessions pass on the rebuilt image.
+4. **pidfd spin** (found on the first zen boot, 2026-09-13): three
+   death paths — `on_service_death`, `on_dying_death`,
+   `on_rescue_death` — logged (or silently) returned on a missed
+   `take_status` WITHOUT detaching the pidfd. A dead child's pidfd
+   stays readable forever, so the level-triggered epoll event refires
+   at full speed: an infinite busy loop in PID 1 and a log flood
+   (`tun/net-lo signalled but has no status yet` pairs — the user's
+   "быстро бегущие строчки" during that boot; 64 KB rotated in
+  seconds, the boot felt slow). The race is probabilistic — clean
+   boots on lts and the second zen boot prove the same binaries boot
+   fine when the event order is lucky. Fix: all three paths detach
+   the pidfd on a missed status, and `reap_unobserved_children()`
+   completes the exit from the reaped ring on the next SIGCHLD —
+   every path now converges, at worst one log line. Regression: new
+   `flood.session` (a service whose death leaves 30 orphan
+   grandchildren to PID 1, restart churn interleaving orphan reaps
+   with supervised deaths) asserts `status-misses-0`; 69 unit tests
+   and 16/16 system sessions pass.
+
+## The zen session error (not a Godel bug, fixed in the user's shell)
+
+`niri-session` (upstream script) starts a session only under a service
+manager: systemd if `systemctl` exists, else a **user dinit daemon**
+(`pgrep -u $UID dinit`) — under Godel neither runs, so it exits with
+"dinit user daemon is not running." and the TTY loop showed an error;
+the user worked around it by typing `niri` manually. Fix:
+`~/.bash_profile` now runs `exec dbus-run-session -- niri --session`
+(backup at `~/.bash_profile.bak-godel`): `niri --session` imports the
+environment into D-Bus and runs D-Bus services itself, no service
+manager needed. Autologin must now land in the compositor on every
+kernel without manual input.
 3. Found by reading persisted logs, not by a crash — the logsync
    service (PID 1 log copied to `/var/log/godel/supervisor.log` every
    5 s) is what made both diagnoses possible. Keep it.
@@ -130,8 +161,12 @@ the Happ GUI (it caches its "max reconnect attempts" state).
 
 The user approved committing 0.9.0 as a pre-release. Committed locally
 in five batches (library; PID 1 + godelctl; tools + sessions; docs;
-migration kit). NOT pushed, NOT tagged — push to origin (Codeberg) +
-github and the `v0.9.0` tag still need explicit approval.
+migration kit), then three follow-ups: the tun oneshot + happd chaining
+(43edb4e) and the pidfd-detach fix with the flood session (95101d2).
+NOT pushed, NOT tagged — push to origin (Codeberg) + github and the
+`v0.9.0` tag still need explicit approval. The installed
+`/usr/local/sbin/godel` predates the pidfd fix: one more apply.sh run
+plus a reboot is needed to pick it up.
 
 ## What the user must do next
 
