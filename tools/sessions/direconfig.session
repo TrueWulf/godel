@@ -1,0 +1,67 @@
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+comment a directory file whose service name collides with services.conf is refused
+send mkdir -p /etc/godel/services.d
+expect godel# timeout=10
+send printf '[service "ttyS0"]\ncommand = /bin/getty -L 115200 ttyS0 vt100\nrestart = never\n' > /etc/godel/services.d/ttyS0.conf
+expect godel# timeout=10
+send godelctl reload
+expect reload refused timeout=15
+expect duplicate service name timeout=10
+send rm /etc/godel/services.d/ttyS0.conf
+
+comment move the single-file config away and build the directory set
+send mv /etc/godel/services.conf /root/services.conf.saved
+expect godel# timeout=10
+send printf '[service "hostname"]\ncommand = /bin/hostname godel-dir\ntype = oneshot\nrestart = never\n' > /etc/godel/services.d/hostname.conf
+expect godel# timeout=10
+send printf '[service "rootfs-rw"]\ncommand = /bin/mount -o remount,rw /\ntype = oneshot\nrestart = never\n' > /etc/godel/services.d/rootfs-rw.conf
+expect godel# timeout=10
+send printf '[service "tmpfs-tmp"]\ncommand = /bin/mount -t tmpfs -o mode=1777 tmpfs /tmp\ntype = oneshot\nrestart = never\nafter = rootfs-rw\n' > /etc/godel/services.d/tmpfs-tmp.conf
+expect godel# timeout=10
+send printf '[service "ttyS0"]\ncommand = /bin/getty -L 115200 ttyS0 vt100\nrestart = always\nrestart_delay = 1s\nshutdown_timeout = 2s\nafter = rootfs-rw tmpfs-tmp\n' > /etc/godel/services.d/ttyS0.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+send echo dir-count-$(wc -l < /run/godel/status)
+expect dir-count-4 timeout=10
+
+comment the validation mode checks the directory without starting anything
+send godel -t /etc/godel/services.d
+expect OK, 4 service(s) timeout=10
+send godel -t /etc/godel/services.d; echo t-rc-$?
+expect t-rc-0 timeout=10
+send printf '[service "broken"]\ncommand = /bin/true\nafter = ghost\n' > /tmp/broken.conf
+expect godel# timeout=10
+send godel -t /tmp/broken.conf; echo t-rc-$?
+expect /tmp/broken.conf:1 timeout=10
+expect after names unknown service timeout=10
+expect t-rc-1 timeout=10
+send rm /tmp/broken.conf
+expect godel# timeout=10
+
+comment the next boot must come up from the directory alone
+send godelctl reboot
+expect login: timeout=120
+sleep 1
+send root
+expect Password:
+send godel
+expect godel#
+send ls /etc/godel/services.conf
+expect No such file timeout=10
+send godelctl status
+expect hostname timeout=10
+expect ttyS0 timeout=10
+send echo serial-state-$(awk '$1=="ttyS0"{print $2}' /run/godel/status)
+expect serial-state-up timeout=10
+send echo hostname-out-$(hostname)
+expect hostname-out-godel-dir timeout=10
+
+send godelctl poweroff
+expect Godel: shutting down timeout=30
+expect powering off timeout=30

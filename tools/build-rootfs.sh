@@ -64,9 +64,11 @@ fi
 
 cat > "$stage/etc/passwd" <<'EOF'
 root:x:0:0:root:/root:/bin/sh
+svc:x:1000:1000:service account:/var/empty:/bin/false
 EOF
 cat > "$stage/etc/group" <<'EOF'
 root:x:0:
+svc:x:1000:
 EOF
 hash=$("$busybox" cryptpw -m sha512 godel)
 printf 'root:%s:19900:0:99999:7:::\n' "$hash" > "$stage/etc/shadow"

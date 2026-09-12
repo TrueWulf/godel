@@ -1,0 +1,41 @@
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+comment a service that runs as the svc user and writes its log through the supervisor fd
+send printf '[service "runas"]\ncommand = /bin/sh -c "id -un > /tmp/runas-user; id -u >> /tmp/runas-user; echo runas-marker; exec sleep 500"\nrun-as = svc\nrestart = never\n[service "runas-bad"]\ncommand = /bin/sleep 500\nrun-as = ghost-user\nrestart = never\n' >> /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+sleep 2
+
+comment the process really runs as uid/gid 1000
+send cat /tmp/runas-user
+expect svc timeout=10
+send tail -1 /tmp/runas-user
+expect 1000 timeout=10
+
+comment the unprivileged child still reaches its per-service log
+send cat /var/log/godel/runas.log
+expect runas-marker timeout=10
+
+comment an unknown run-as user fails loudly before execve
+send cat /var/log/godel/runas-bad.log
+expect unknown user timeout=10
+send echo rb-$(awk '$1=="runas-bad"{print $2}' /run/godel/status)
+expect rb-stopped timeout=10
+
+comment numeric run-as ids also work
+send printf '[service "runas-num"]\ncommand = /bin/sh -c "id -u > /tmp/runas-num; exec sleep 500"\nrun-as = 1000:1000\nrestart = never\n' >> /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+sleep 2
+send cat /tmp/runas-num
+expect 1000 timeout=10
+
+send godelctl poweroff
+expect Godel: shutting down timeout=30
+expect powering off timeout=30

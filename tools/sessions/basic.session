@@ -4,6 +4,27 @@ expect Password:
 send godel
 expect godel#
 
+comment pseudo-filesystems an init must provide: devpts and /dev/shm
+send mount | grep devpts
+expect devpts timeout=10
+send ls /dev/pts
+expect ptmx timeout=10
+send mount | grep /dev/shm
+expect /dev/shm timeout=10
+
+comment memory accounting: controllers enabled at the hierarchy root and
+comment supervisor level, and a live per-service memory file exists;
+comment markers go through $m so only real output can match them
+send m=memory; grep -q $m /sys/fs/cgroup/cgroup.subtree_control && echo root-$m-ok
+expect root-memory-ok timeout=10
+expect godel# timeout=10
+send grep -q $m /sys/fs/cgroup/godel/cgroup.subtree_control && echo supervisor-$m-ok
+expect supervisor-memory-ok timeout=10
+expect godel# timeout=10
+send test -f /sys/fs/cgroup/godel/beacon/memory.current && echo beacon-$m-file-ok
+expect beacon-memory-file-ok timeout=10
+expect godel# timeout=10
+
 comment the status snapshot lists every configured service
 send godelctl status
 expect beacon timeout=10
