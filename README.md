@@ -16,20 +16,20 @@
 Godel is for VMs, embedded images, and personal systems where a transparent
 PID 1 is more useful than a distribution-sized service manager.
 
-It is **not** a systemd replacement and does not try to compete with OpenRC,
-runit, dinit, s6, or GNU Shepherd. Godel is an experiment in a simple,
-allocation-free Hare init: explicit enough to audit, strict enough to fail
-visibly, and based on current Linux process primitives.
+It is not a systemd replacement and does not compete with OpenRC,
+runit, dinit, s6, or GNU Shepherd. It is a small init and supervisor
+in Hare with fixed storage and no runtime allocation, built on Linux
+cgroup v2, pidfds, and epoll.
 
 ## Why Hare
 
-Hare produces a static binary without libc by default and keeps the language
-and runtime deliberately small. Godel measures its static PID 1 footprint and
-build time in [`docs/benchmarks.md`](docs/benchmarks.md).
+Hare produces a static binary without libc by default and keeps the
+language and runtime small. Godel measures its static PID 1 footprint
+and build time in [`docs/benchmarks.md`](docs/benchmarks.md).
 
-Godel uses Hare tagged unions for service-exit decisions, fixed storage rather
-than a heap, and explicit Linux syscalls only where the standard library does
-not cover the kernel interface.
+Service-exit decisions use tagged unions, configuration lives in fixed
+storage, and kernel interfaces are called through explicit syscalls
+where the standard library does not cover them.
 
 ## Features
 
@@ -55,7 +55,8 @@ not cover the kernel interface.
 - recovery shell for bad configurations or persistent service failure
 - allocation-free `/run/godel/status` and two-generation `/run/godel/godel.log`
 - per-service `env = NAME=VALUE` entries and `type = oneshot` boot jobs
-- `godelctl status|reload|reboot|poweroff` over a documented control interface
+- `godelctl status|list|start|stop|catlog|reload|reboot|poweroff` over a
+  documented control interface
 
 ## Build
 
@@ -92,8 +93,9 @@ added, changed, and removed oneshots, readiness gating with a late
 newline, a readiness timeout that releases stuck dependents, per-service
 logs with rotation, a service running under `run-as` with its own log,
 booting from `services.d` alone, an fsck hook on a forced-dirty ext4
-root and on non-root disks, and poweroff during restart backoff. An
-honest comparison with nitro, runit, s6, and dinit is in
+root and on non-root disks, orphan reaping under restart churn, and
+poweroff during restart backoff. A feature-by-feature comparison with
+nitro, runit, s6, and dinit is in
 [`docs/comparison.md`](docs/comparison.md).
 
 Older initramfs smoke tests are still available:
@@ -107,6 +109,20 @@ make qemu-badconfig   # recovery-shell path
 They use `tools/run-qemu.sh`, require `qemu-system-x86_64`, `cpio`, and a
 kernel at `/boot/vmlinuz-linux-lts` (override with `KERNEL=/path/to/kernel`),
 and do not modify the host bootloader.
+
+## Examples
+
+Ready-to-adapt service sets live in [`examples/`](examples/):
+
+- `examples/desktop/` — fsck, udev, dbus, elogind, NetworkManager,
+  getty: a workstation set for a non-systemd distribution
+- `examples/server/` — network over DHCP, sshd, cron, syslog: a
+  small server or VM set
+- `examples/services.conf` — a minimal VM image with a readiness-
+  gated application service
+
+Each directory explains what to adapt (device nodes, daemon paths)
+and installs with a copy plus `godel -t`.
 
 ## Configuration
 
@@ -145,9 +161,8 @@ across sources is a diagnostic that refuses the whole configuration.
 `godel -t PATH` validates a file, a config root, or the directory with
 line-numbered diagnostics and a nonzero exit, without starting anything.
 Limits are intentional and fixed: 64 services, 8 command arguments,
-4 environment entries, 4 dependencies, and 31-byte names. See
-[`examples/services.conf`](examples/services.conf) for a bootable
-VM-oriented configuration.
+4 environment entries, 4 dependencies, and 31-byte names. See the
+[`examples/`](examples/) directory for complete service sets.
 
 Service stdout and stderr are routed to `/var/log/godel/<name>.log`
 (fallback `/run/godel/logs/<name>.log` while the root is read-only), mode
