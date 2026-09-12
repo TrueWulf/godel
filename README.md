@@ -1,40 +1,46 @@
 <h1 align="center"><img src="assets/godel-wordmark.png" alt="godel" width="330"></h1>
 
 <p align="center">
-  A simple, static Linux init and service supervisor written in Hare.
+  A static Linux init and service supervisor written in Hare.
 </p>
 
 <p align="center">
-  <a href="https://codeberg.org/TrueWulf/godel">Source</a> ·
-  <a href="docs/architecture.md">Architecture</a> ·
-  <a href="docs/first-boot.md">First boot</a> ·
-  <a href="docs/migration.md">Migration</a> ·
-  <a href="docs/comparison.md">Comparison</a> ·
-  <a href="docs/benchmarks.md">Benchmarks</a> ·
-  <a href="LICENSE">BSD-2-Clause</a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue.svg" alt="License: BSD-2-Clause"></a>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/license-BSD--2--Clause-blue.svg" alt="License: BSD-2-Clause">
+  <a href="https://codeberg.org/TrueWulf/godel/src/branch/main/docs/architecture.md">Architecture</a> ·
+  <a href="https://codeberg.org/TrueWulf/godel/src/branch/main/docs/first-boot.md">First boot</a> ·
+  <a href="https://codeberg.org/TrueWulf/godel/src/branch/main/docs/migration.md">Migration</a> ·
+  <a href="https://codeberg.org/TrueWulf/godel/src/branch/main/docs/comparison.md">Comparison</a> ·
+  <a href="https://codeberg.org/TrueWulf/godel/src/branch/main/docs/benchmarks.md">Benchmarks</a>
 </p>
 
-Godel is for VMs, embedded images, and personal systems where a transparent
-PID 1 is more useful than a distribution-sized service manager.
+Godel is one static binary, without libc, that runs as PID 1 and
+supervises every service on the machine. After boot it never allocates:
+the whole configuration lives in a fixed 32 KiB snapshot.
 
+- about 3,150 lines of Hare (3,900 with the test suite), nothing
+  beyond the Hare standard library
+- 392 KB resident for PID 1 on a running desktop, measured through
+  cgroups
+- 361 KB stripped static binary
+- userspace ready in about 10 ms on real hardware
+
+It targets VMs, embedded images, and personal machines — including
+non-systemd distributions such as Artix, Void, Alpine, and Gentoo.
 It is not a systemd replacement and does not compete with OpenRC,
-runit, dinit, s6, or GNU Shepherd. It is a small init and supervisor
-in Hare with fixed storage and no runtime allocation, built on Linux
-cgroup v2, pidfds, and epoll.
+runit, dinit, s6, or GNU Shepherd; it is a small init you can read
+in one sitting.
 
 ## Why Hare
 
-Hare produces a static binary without libc by default and keeps the
-language and runtime small. Godel measures its static PID 1 footprint
-and build time in [`docs/benchmarks.md`](docs/benchmarks.md).
-
-Service-exit decisions use tagged unions, configuration lives in fixed
-storage, and kernel interfaces are called through explicit syscalls
-where the standard library does not cover them.
+Hare builds a static binary without libc by default and keeps the
+language and runtime small. Service-exit decisions use tagged unions,
+configuration lives in fixed storage, and kernel interfaces are called
+through explicit syscalls where the standard library does not cover
+them. The static PID 1 footprint and build time are measured in
+[`docs/benchmarks.md`](https://codeberg.org/TrueWulf/godel/src/branch/main/docs/benchmarks.md).
 
 ## Features
 
@@ -75,45 +81,19 @@ make test     # 69 unit tests
 The Makefile defaults to `~/tools/hare/bin/hare`; override it with
 `make HARE=hare` when Hare is already on `PATH`.
 
-## QEMU test image
+## Testing
 
-```sh
-make qemu-system      # build image and boot it with serial console
-make test-system      # scripted login, supervision, and failure sessions
-tools/soak.sh 50      # 50 boot/reboot cycles with retained transcripts
-```
-
-`make qemu-system` builds a disposable ext4 disk image under `.image/`
-(no initramfs, no root privileges) and boots it: Godel runs as PID 1 with
-busybox on the disk, agetty on `ttyS0` and `tty1`, serial login as
-`root`/`godel`, oneshots for hostname, root remount, `/tmp`, and optional
-`/home`/`/var` mounts. Log in, run `godelctl status`, kill a service and
-watch it restart, reload the config, reboot and power off —
-[`docs/first-boot.md`](docs/first-boot.md) walks through the whole flow.
-
-The scripted sessions in `tools/sessions/` prove the failure paths and
-the subsystems: SIGKILL recovery, SIGTERM-trapping services,
-corrupted configurations rescued from the recovery shell, reload of
-added, changed, and removed oneshots, readiness gating with a late
-newline, a readiness timeout that releases stuck dependents, per-service
-logs with rotation, a service running under `run-as` with its own log,
-booting from `services.d` alone, an fsck hook on a forced-dirty ext4
-root and on non-root disks, orphan reaping under restart churn, and
-poweroff during restart backoff. A feature-by-feature comparison with
-nitro, runit, s6, and dinit is in
-[`docs/comparison.md`](docs/comparison.md).
-
-Older initramfs smoke tests are still available:
-
-```sh
-make qemu-reboot      # backoff, give-up, reload, reboot
-make qemu-poweroff    # graceful SIGTERM shutdown
-make qemu-badconfig   # recovery-shell path
-```
-
-They use `tools/run-qemu.sh`, require `qemu-system-x86_64`, `cpio`, and a
-kernel at `/boot/vmlinuz-linux-lts` (override with `KERNEL=/path/to/kernel`),
-and do not modify the host bootloader.
+`make test-system` boots a disposable QEMU image through 17 scripted
+sessions — kill and restart, readiness gating and timeouts, atomic
+reload, recovery from corrupt configurations, per-service logging,
+`run-as`, orphan floods, and graceful poweroff — and `tools/soak.sh 50`
+runs 50 boot/reboot cycles with retained transcripts. The image lives
+under `.image/`, needs no root privileges, and never touches the host
+bootloader. [`docs/first-boot.md`](https://codeberg.org/TrueWulf/godel/src/branch/main/docs/first-boot.md)
+walks the image by hand; `make qemu-reboot`, `make qemu-poweroff`, and
+`make qemu-badconfig` run the older initramfs smoke tests. A
+feature-by-feature comparison with nitro, runit, s6, and dinit is in
+[`docs/comparison.md`](https://codeberg.org/TrueWulf/godel/src/branch/main/docs/comparison.md).
 
 ## Examples
 
@@ -184,7 +164,7 @@ are rejected with a line-numbered diagnostic.
 
 ## Control interface
 
-`godelctl` is the stable operator interface:
+`godelctl` is the operator interface:
 
 ```sh
 godelctl status           # dump /run/godel/status (name, state, pid, restarts)
@@ -211,8 +191,8 @@ on pidfds for its preferred supervision path (Linux 5.3+) and `cgroup.kill`
 for full cgroup tree cleanup (Linux 5.14+). The SIGCHLD and process-group
 paths keep the supervisor functional on older kernels with reduced
 isolation; the compatibility table in
-[`docs/architecture.md`](docs/architecture.md) has the details and the
-tested kernel list.
+[`docs/architecture.md`](https://codeberg.org/TrueWulf/godel/src/branch/main/docs/architecture.md)
+has the details and the tested kernel list.
 
 ## License
 
