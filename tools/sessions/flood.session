@@ -1,0 +1,28 @@
+
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+comment a service whose death leaves 30 orphan grandchildren for PID 1;
+comment the restart churn interleaves orphan reaps with supervised deaths
+send printf '%s\n' '[service "flood"]' 'command = /bin/sh -c "i=0; while [ $i -lt 30 ]; do (sleep 1) & i=$((i+1)); done; exit 0"' 'restart = always' 'restart_delay = 1s' >> /etc/godel/services.conf
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+
+comment several churn cycles while the death paths race the SIGCHLD reaper
+sleep 9
+send godelctl reload
+expect configuration reloaded timeout=15
+sleep 3
+
+comment the death paths must converge: every pidfd detach happens at most
+comment once and the reaped ring completes the exit, so zero status misses
+send c=$(grep -c "no status yet" /run/godel/godel.log); echo status-misses-$c
+expect status-misses-0 timeout=10
+expect godel# timeout=10
+
+send godelctl poweroff
+expect powering off timeout=30
