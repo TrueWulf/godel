@@ -167,15 +167,21 @@ are rejected with a line-numbered diagnostic.
 `godelctl` is the stable operator interface:
 
 ```sh
-godelctl status     # dump /run/godel/status (name, state, pid, restarts)
-godelctl reload     # re-read the config; refuses invalid files atomically
+godelctl status           # dump /run/godel/status (name, state, pid, restarts)
+godelctl list             # same output, explicit alias
+godelctl start <service>  # manual start (also clears a backoff timer)
+godelctl stop <service>   # manual stop; restart policies do not fire
+godelctl catlog <service> # dump /var/log/godel/<service>.log
+godelctl reload           # re-read the config; refuses invalid files atomically
 godelctl reboot
 godelctl poweroff
 ```
 
 `reload`, `reboot`, and `poweroff` send `SIGHUP`, `SIGUSR1`, and `SIGTERM`
 to PID 1; those signals are the documented transport and also work from any
-process.
+process. `start` and `stop` go through the root-only `/run/godel/ctl` FIFO,
+one `verb name` line per write; a manual stop is never retried by the
+restart policy until an explicit start.
 
 ## Status
 

@@ -1,0 +1,40 @@
+
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+comment manual stop must suppress restart-on-failure and start must revive
+send godelctl stop beacon
+expect stopping beacon timeout=10
+expect godel# timeout=10
+sleep 3
+send b=$(awk '$1=="beacon"{print $2}' /run/godel/status); echo beacon-is-$b
+expect beacon-is-stopped timeout=10
+expect godel# timeout=10
+
+comment unknown names are refused by the tool and by PID 1
+send godelctl stop nosuch
+expect unknown service timeout=10
+expect godel# timeout=10
+
+comment start revives the service and its log continues
+send godelctl start beacon
+expect starting beacon timeout=10
+expect godel# timeout=10
+sleep 2
+send b=$(awk '$1=="beacon"{print $2}' /run/godel/status); echo beacon-is-$b
+expect beacon-is-up timeout=10
+expect godel# timeout=10
+
+comment catlog and list read side
+send godelctl catlog beacon
+expect beacon: alive timeout=10
+expect godel# timeout=10
+send godelctl list
+expect tty1	up timeout=10
+expect godel# timeout=10
+
+send godelctl poweroff
+expect powering off timeout=30

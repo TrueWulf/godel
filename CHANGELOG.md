@@ -50,6 +50,14 @@
 - Memory accounting: PID 1 enables `+memory` and `+pids` at the cgroup
   v2 hierarchy root and then at the supervisor group, logging
   `memory accounting enabled`; every service runs in its own group.
+- Control channel: PID 1 owns a root-only `/run/godel/ctl` FIFO and
+  `godelctl` gained `start <service>`, `stop <service>` (a manual stop
+  is never retried by the restart policy until an explicit start),
+  `catlog <service>`, and `list`. A missed death status now detaches
+  the pidfd instead of leaving a level-triggered event in epoll — the
+  old paths could spin PID 1 and flood the log forever when a death
+  raced the SIGCHLD reaper (seen on real hardware); `flood.session`
+  and `control.session` cover both.
 - Real-hardware migration (Stage 3, Artix/GRUB) found three bugs, all
   fixed and regression-covered: a closed readiness pipe was re-logged
   forever and flooded the log (the fd is now closed on EOF,
