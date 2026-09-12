@@ -43,10 +43,25 @@ console CAD into SIGINT, which follows the poweroff path.
 
 ## Configuration and reload
 
-`/etc/godel/services.conf` is parsed into a fixed-size snapshot: at most
-16 services, 8 argv entries, 4 `env` entries, and 4 `after` references
-per service, all pointing into a 16 KiB buffer. Parsing mutates the
-buffer in place (NUL-terminating words) and never allocates.
+Configuration comes from two sources that merge into one snapshot:
+`/etc/godel/services.conf` (optional) and a scanned directory
+`/etc/godel/services.d/`. A directory file follows the same syntax and
+holds exactly one service; the service name must equal the file name
+without `.conf`, so `sshd.conf` defines `[service "sshd"]`. Files are
+read in name order. A service name defined twice — across the two
+sources or within one — is a diagnostic that refuses the whole
+configuration. A comment-only or multi-service directory file is
+rejected with the file name and line in the message.
+
+The snapshot is fixed storage: at most 64 services, 8 argv entries,
+4 `env` entries, and 4 `after` references per service, all pointing
+into a 32 KiB buffer. Parsing mutates the buffer in place
+(NUL-terminating words) and never allocates.
+
+`godel -t PATH` validates a file, a config root, or a `services.d`
+directory without starting anything: it prints `path:line: message`
+diagnostics and exits nonzero on any error, so a rehearsal can check a
+configuration before booting it.
 
 The tokenizer understands double quotes, single quotes, backslash
 escapes, empty quoted arguments, and concatenation of quoted and bare
@@ -54,9 +69,10 @@ segments — a `sh -c "mountpoint -q /home || mount /dev/vdb /home"` line
 reaches the shell as one argv element. Unterminated quotes are rejected
 with a line-numbered diagnostic.
 
-Reload is atomic: the new file is parsed into the *inactive* set first.
-On any parse error the active set is untouched and the refusal is
-logged. On success, services are matched by name plus argv:
+Reload is atomic: the full source set is parsed into the *inactive* set
+first. On any parse error the active set is untouched and the refusal
+is logged. On success, services are matched by name plus argv plus
+run-as:
 
 - matched and unchanged: keep the running process, reset restart
   bookkeeping (same slot) or move the runtime to the new slot and
@@ -79,12 +95,15 @@ convention s6, dinit, and nitro use, so their service packs port over.
 Readiness changes gating only where the *dependency* opted in. A
 dependent of a notified service starts only after the newline (or, for a
 notified oneshot, after a clean exit). Dependents of plain services
-follow plain ordering exactly as before. There is no readiness timeout:
-a notified service that never signals holds its dependents until it
-does, restarts, or exits cleanly. A notified service that crashes
-re-enters the unready state on its next start. If the readiness pipe
-cannot be created or registered, the service logs the fallback and its
-dependents proceed under plain ordering.
+follow plain ordering exactly as before. A notified service that never
+signals holds its dependents indefinitely unless the service also
+declares `readiness_timeout`: at the deadline the supervisor logs the
+timeout, stops the service (SIGTERM, no restart), marks it in the
+status snapshot as `ready=timeout`, and releases its dependents. A
+notified service that crashes re-enters the unready state on its next
+start. If the readiness pipe cannot be created or registered, the
+service logs the fallback and its dependents proceed under plain
+ordering.
 
 The boot configuration of the test image uses this twice: `rootfs-rw`
 and `tmpfs-tmp` are notified oneshots, so gettys start only after the
@@ -96,11 +115,32 @@ remount actually completed, and their logs land deterministically under
 Every service's stdout and stderr are redirected at spawn time to
 `/var/log/godel/<name>.log` when that path is creatable, falling back to
 `/run/godel/logs/<name>.log` while the root is read-only or `/var` is
-absent. The console keeps PID 1's own messages only. Rotation is
-size-based (64 KiB) and happens when a service (re)starts: an oversized
-log is renamed to `<name>.log.1` before the new file is opened. If
-neither location is writable the service keeps the console rather than
-dropping output.
+absent. Log files are created with mode 0600 (root-readable only). A
+service that must keep the console — a getty on another vty, for
+example — opts out with `log = no` and inherits the console instead.
+
+The honest timestamp answer: the child writes its own bytes directly
+into the log file descriptor, so the supervisor cannot prefix each
+line with a wall-clock time. Godel instead writes a supervisor-side
+header at every (re)open — `== godel: <name> log opened
+2026-09-12T14:21:05Z` — and everything between two headers is raw,
+untimestamped service output. Rotation is size-based (64 KiB) and
+happens when a service (re)starts: an oversized log is renamed to
+`<name>.log.1` before the new file is opened. If neither location is
+writable the service keeps the console rather than dropping output.
+
+## Per-service identity
+
+`run-as = user[:group]` makes the child switch identity after the
+cgroup attach and before `execve`: `setresgid` first, then
+`setresuid`. Names are resolved from `/etc/passwd` and `/etc/group`
+into a fixed buffer at spawn time; numeric ids are accepted directly.
+There are no supplementary groups and no PAM: the process gets exactly
+one uid and one gid (the user's primary group when no group is given).
+A service whose user or group cannot be resolved exits 126 before
+exec and the failure is visible in its per-service log. The log file
+itself stays root-owned; the child inherits the open descriptor, so an
+unprivileged service can still write its log.
 
 ## Failure paths
 
@@ -119,8 +159,8 @@ dropping output.
 - `/run/godel/status`: one tab-separated line per service —
   `name`, `state` (`stopped|up|backoff|gave-up`), `pid=`, `restarts=`,
   `ready=` (`-` when the service is not notified, otherwise
-  `yes`/`no`). Written after every state change; read by
-  `godelctl status`.
+  `yes`/`no`, or `timeout` after a readiness timeout released it).
+  Written after every state change; read by `godelctl status`.
 - `/run/godel/godel.log` (+ `.1`): the same lines as the console, in a
   two-generation 64 KiB ring file.
 - The console (fds 0/1/2 of PID 1) carries every PID 1 log line; service

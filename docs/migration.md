@@ -75,8 +75,7 @@ cannot signal must not declare `notification-fd`.
 ## Stage 2: rehearse without touching the machine
 
 1. Validate the configuration: `godel -t /etc/godel/services.d` parses
-   every file and reports diagnostics without starting anything
-   (required 0.9.0 feature).
+   every file and reports diagnostics without starting anything.
 2. Clone the real root filesystem into a raw image (or boot a throwaway
    copy of the disk in QEMU with `-drive file=real-disk-copy`) and boot
    it with the *same* service set. Fix every failure there. This is the
@@ -113,5 +112,6 @@ cannot signal must not declare `notification-fd`.
 - Anything that depends on systemd units, D-Bus activation, or socket
   activation does not exist under Godel and needs its daemon started
   directly or is out of scope.
-- Until the 16-service limit is lifted in 0.9.0, a desktop set does not
-  fit at all; do not attempt the migration before that lands.
+- The 0.9.0 limits (64 services, one service per `services.d` file,
+  single group under `run-as`, no socket activation) are the next real
+  constraint to watch on a desktop set.
