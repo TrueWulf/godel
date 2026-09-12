@@ -92,3 +92,42 @@ fn rfind(s: *set, name: str) size = {
 		assert(order[i] == plain[i]);
 	};
 };
+
+@test fn released_dependency_satisfies_gate() void = {
+	let s = set { ... };
+	rparse_ok(&s, "[service \"a\"]\ncommand = /bin/true\nnotification-fd = 3\n[service \"b\"]\ncommand = /bin/true\nafter = a\n");
+	const ai = rfind(&s, "a");
+	let rts: [MAX_SERVICES]runtime = [new_runtime()...];
+	rts[ai].pid = 42;
+	assert(!dep_satisfied(&s.services[ai], &rts[ai]));
+	rts[ai].released = true;
+	assert(dep_satisfied(&s.services[ai], &rts[ai]));
+};
+
+@test fn readiness_due_respects_deadline_and_state() void = {
+	let s = set { ... };
+	rparse_ok(&s, "[service \"a\"]\ncommand = /bin/true\nnotification-fd = 3\nreadiness_timeout = 2s\n");
+	const ai = rfind(&s, "a");
+	const cfg = &s.services[ai];
+	let r = new_runtime();
+	r.pid = 42;
+	r.started_at = 1000;
+	assert(!readiness_due(cfg, &r, 2999));
+	assert(readiness_due(cfg, &r, 3000));
+	r.ready = true;
+	assert(!readiness_due(cfg, &r, 5000));
+	r.ready = false;
+	r.released = true;
+	assert(!readiness_due(cfg, &r, 5000));
+	r.released = false;
+	r.pid = 0;
+	assert(!readiness_due(cfg, &r, 5000));
+};
+
+@test fn readiness_due_requires_timeout_and_notification() void = {
+	let s = set { ... };
+	rparse_ok(&s, "[service \"plain\"]\ncommand = /bin/true\n[service \"notimeout\"]\ncommand = /bin/true\nnotification-fd = 3\n");
+	const r = new_runtime();
+	assert(!readiness_due(&s.services[rfind(&s, "plain")], &r, 1_000_000));
+	assert(!readiness_due(&s.services[rfind(&s, "notimeout")], &r, 1_000_000));
+};
