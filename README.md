@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue.svg" alt="License: BSD-2-Clause"></a>
+  <a href="LICENSE"><img src="https://codeberg.org/TrueWulf/godel/src/branch/main/LICENSE" alt="License: BSD-2-Clause"></a>
 </p>
 
 <p align="center">
