@@ -1,3 +1,4 @@
+use bytes;
 use fmt;
 use os;
 use godel;
@@ -38,6 +39,7 @@ let notify_r: [godel::MAX_SERVICES]int = [-1...];
 let child_log_fd: int = -1;
 let child_notify_w: int = -1;
 let child_notify_no: int = 0;
+let ctl_fd: int = -1;
 
 type reaped_entry = struct { used: bool, pid: int, status: u32 };
 
@@ -181,7 +183,7 @@ export fn main() void = {
 		os::exit(2);
 	};
 	mount_pseudo_filesystems();
-	mount_runtime();
+	ctl_fd = mount_runtime();
 	connect_console();
 	godel::open_file(&logger, strings::toutf8("/run/godel/godel.log"));
 	logf("Godel {}: starting\n", VERSION);
@@ -209,6 +211,11 @@ export fn main() void = {
 			|| !(godel::epoll_add(&ep, tmr.fd, godel::TAG_TIMER) is void)) {
 		os::exit(1);
 	};
+	if (ctl_fd >= 0
+			&& !(godel::epoll_add(&ep, ctl_fd, godel::TAG_CTL) is void)) {
+		godel::close_fd(ctl_fd);
+		ctl_fd = -1;
+	};
 
 	const boot_ms = godel::now_ms();
 	load_and_apply();
@@ -234,6 +241,8 @@ export fn main() void = {
 				on_timer();
 			} else if (data == godel::TAG_RESCUE) {
 				on_rescue_death();
+			} else if (data == godel::TAG_CTL) {
+				on_ctl();
 			} else if (data < godel::MAX_SERVICES: u64) {
 				on_service_death(data: size);
 			} else if (data >= godel::TAG_DYING_BASE
@@ -412,6 +421,71 @@ fn on_service_death(index: size) void = {
 	case let s: u32 => yield s;
 	};
 	on_service_exit(index, status);
+};
+
+fn on_ctl() void = {
+	if (ctl_fd < 0) return;
+	let buf: [256]u8 = [0...];
+	for (true) {
+		const n = match (rt::read(ctl_fd, &buf[0]: *opaque, len(buf))) {
+		case let n: size => yield n;
+		case => return;
+		};
+		if (n == 0) return;
+		let pos: size = 0;
+		for (pos < n) {
+			let end = pos;
+			for (end < n && buf[end] != '\n') end += 1;
+			if (end > pos) ctl_command(buf[pos..end]);
+			pos = end + 1;
+		};
+	};
+};
+
+fn ctl_find(name: []u8) (void | size) = {
+	for (let i = 0z; i < sets[active_set].count; i += 1) {
+		if (bytes::equal(godel::svc_name(&sets[active_set].services[i]),
+				name)) return i;
+	};
+};
+
+fn ctl_command(line: []u8) void = {
+	let sp: (void | size) = void;
+	for (let i = 0z; i < len(line); i += 1) {
+		if (line[i] == ' ') {
+			sp = i;
+			break;
+		};
+	};
+	const verb = match (sp) {
+	case void => yield line;
+	case let s: size => yield line[..s];
+	};
+	const name = match (sp) {
+	case void => yield line[..0];
+	case let s: size => yield line[s + 1..];
+	};
+	const idx = match (ctl_find(name)) {
+	case void =>
+		logf("godel: ctl: unknown service '{}'\n",
+			strings::fromutf8_unsafe(name));
+		return;
+	case let i: size => yield i;
+	};
+	const svc = &sets[active_set].services[idx];
+	if (bytes::equal(verb, strings::toutf8("stop"))) {
+		if (svcs[idx].pid <= 0) return;
+		logf("godel: ctl: stopping {}\n", nm(godel::svc_name(svc)));
+		stop_service(idx);
+		write_status();
+	} else if (bytes::equal(verb, strings::toutf8("start"))) {
+		if (svcs[idx].pid > 0) return;
+		svcs[idx].state = godel::state::stopped;
+		svcs[idx].restart_at = 0;
+		logf("godel: ctl: starting {}\n", nm(godel::svc_name(svc)));
+		start(idx);
+		write_status();
+	};
 };
 
 fn on_service_exit(index: size, status: u32) void = {

@@ -161,12 +161,26 @@ the Happ GUI (it caches its "max reconnect attempts" state).
 
 The user approved committing 0.9.0 as a pre-release. Committed locally
 in five batches (library; PID 1 + godelctl; tools + sessions; docs;
-migration kit), then three follow-ups: the tun oneshot + happd chaining
-(43edb4e) and the pidfd-detach fix with the flood session (95101d2).
-NOT pushed, NOT tagged — push to origin (Codeberg) + github and the
-`v0.9.0` tag still need explicit approval. The installed
-`/usr/local/sbin/godel` predates the pidfd fix: one more apply.sh run
-plus a reboot is needed to pick it up.
+migration kit), then follow-ups: the tun oneshot + happd chaining
+(43edb4e), the pidfd-detach fix with the flood session (95101d2), and
+the control channel (godelctl start/stop/catlog/list over the
+/run/godel/ctl FIFO, `control.session`; extras.session now uses
+order-independent marker probes after the new ctl file reshuffled ls
+columns). NOT pushed, NOT tagged — push to origin (Codeberg) + github
+and the `v0.9.0` tag still need explicit approval. The installed
+`/usr/local/sbin/godel` predates the pidfd and ctl changes: one more
+apply.sh run plus a reboot is needed to pick them up.
+
+## Open questions
+
+- The zen login delay ("попадаю не сразу в систему") happened on a
+  post-fix zen boot; no logs survived from it (logsync keeps only the
+  rotated log, which still held the older spam boot's data). Next zen
+  boot: read /var/log/godel/supervisor.log for getty restarts, niri
+  timing, and any ctl/log anomalies before drawing conclusions.
+- 0.10 candidates (not started, deliberately deferred past the soak):
+  nothing queued beyond user feedback from Stage 4; the ctl channel
+  covers the previously named start/stop/catlog gap.
 
 ## What the user must do next
 

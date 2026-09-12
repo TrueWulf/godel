@@ -28,11 +28,22 @@ fn mount_pseudo_filesystems() void = {
 	mount_one("cgroup2", "/sys/fs/cgroup", &FS_CGROUP2[0]: *const u8, 0, null);
 };
 
-fn mount_runtime() void = {
+fn mount_runtime() int = {
 	let _ = rt::mkdir("/run", 0o755);
 	mount_one("run", "/run", &FS_TMPFS[0]: *const u8, 0,
 		&MODE_0755[0]: *opaque);
 	let _ = rt::mkdir("/run/godel", 0o755);
+	match (rt::mknodat(rt::AT_FDCWD, "/run/godel/ctl",
+			rt::S_IFIFO | 0o600, 0)) {
+	case void => void;
+	case let e: rt::errno =>
+		if (e != rt::EEXIST) return -1;
+	};
+	match (rt::open("/run/godel/ctl",
+			rt::O_RDWR | rt::O_NONBLOCK | rt::O_CLOEXEC, 0)) {
+	case let fd: int => return fd;
+	case => return -1;
+	};
 };
 
 fn connect_console() void = {

@@ -4,6 +4,7 @@ use time;
 export def TAG_SIGNAL: u64 = 0xffff_ffff;
 export def TAG_TIMER: u64 = 0xffff_fffe;
 export def TAG_RESCUE: u64 = 0xffff_fffd;
+export def TAG_CTL: u64 = 0xffff_fffc;
 export def TAG_DYING_BASE: u64 = 0x100;
 export def TAG_NOTIFY_BASE: u64 = 0x200;
 
