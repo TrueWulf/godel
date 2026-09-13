@@ -60,4 +60,5 @@ expect godel# timeout=10
 comment graceful poweroff over the godelctl interface
 send godelctl poweroff
 expect Godel: shutting down timeout=30
+expect remounting filesystems read-only timeout=30
 expect powering off timeout=30

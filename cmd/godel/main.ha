@@ -11,6 +11,12 @@ def KILL_PHASE_MS: i64 = 1_000;
 def SHUTDOWN_CAP_MS: i64 = 30_000;
 def SHUTDOWN_POWEROFF: u64 = 0x4321fedc;
 def SHUTDOWN_RESTART: u64 = 0x1234567;
+def MS_RDONLY: u64 = 1;
+def MS_REMOUNT: u64 = 32;
+const EMPTY_CS: [1]u8 = [0];
+const RO_TYPES: [_]str = [
+	"ext2", "ext3", "ext4", "xfs", "btrfs", "vfat", "exfat", "f2fs", "ntfs3",
+];
 def RB_MAGIC: u64 = 0xfee1dead;
 def RB_CMD: u64 = 672274793;
 def RB_ENABLE_CAD: u64 = 0x89abcdef;
@@ -821,16 +827,75 @@ fn arm_timer() void = {
 	};
 };
 
+fn remount_ro_candidate(fstype: []u8) bool = {
+	for (let i = 0z; i < len(RO_TYPES); i += 1) {
+		if (bytes::equal(strings::toutf8(RO_TYPES[i]), fstype)) return true;
+	};
+	return false;
+};
+
+fn remount_ro_line(line: []u8) void = {
+	let f1 = 0z;
+	for (f1 < len(line) && line[f1] != ' ') f1 += 1;
+	if (f1 == len(line)) return;
+	let f2 = f1 + 1;
+	for (f2 < len(line) && line[f2] != ' ') f2 += 1;
+	if (f2 == len(line)) return;
+	let t2 = f2 + 1;
+	for (t2 < len(line) && line[t2] != ' ') t2 += 1;
+	const mnt = line[f1 + 1..f2];
+	const fstype = line[f2 + 1..t2];
+	if (!remount_ro_candidate(fstype)) return;
+	for (let i = 0z; i < len(mnt); i += 1) {
+		if (mnt[i] == '\\') return;
+	};
+	let path: [godel::MAX_PATH]u8 = [0...];
+	if (len(mnt) >= len(path)) return;
+	path[..len(mnt)] = mnt;
+	match (rt::mount("", path[..len(mnt)], &EMPTY_CS[0]: *const u8,
+			MS_REMOUNT | MS_RDONLY, null)) {
+	case void => void;
+	case => void;
+	};
+};
+
+fn remount_ro_all() void = {
+	const fd = match (rt::open("/proc/mounts", rt::O_RDONLY | rt::O_CLOEXEC, 0)) {
+	case let fd: int => yield fd;
+	case => return;
+	};
+	let buf: [8192]u8 = [0...];
+	let used: size = 0;
+	for (used < len(buf)) {
+		match (rt::read(fd, &buf[used]: *opaque, len(buf) - used)) {
+		case let n: size =>
+			if (n == 0) break;
+			used += n;
+		case => break;
+		};
+	};
+	godel::close_fd(fd);
+	let pos: size = 0;
+	for (pos < used) {
+		let end = pos;
+		for (end < used && buf[end] != '\n') end += 1;
+		if (end > pos) remount_ro_line(buf[pos..end]);
+		pos = end + 1;
+	};
+};
+
 fn finish_shutdown() never = {
 	for (let i = 0z; i < godel::MAX_SERVICES; i += 1) {
 		if (svcs[i].pid > 0) {
 			let _ = godel::wait_pid_nohang(svcs[i].pid);
 		};
 	};
+	logf("Godel: remounting filesystems read-only\n");
+	remount_ro_all();
+	rt::sync();
 	logf("Godel: {} now\n",
 		if (shutdown.mode == shutdown_action::reboot) "rebooting"
 		else "powering off");
-	rt::sync();
 	const cmd: u64 = if (shutdown.mode == shutdown_action::reboot)
 		SHUTDOWN_RESTART
 	else
