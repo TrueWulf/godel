@@ -82,6 +82,20 @@ documentation stay in English.
    grandchildren to PID 1, restart churn interleaving orphan reaps
    with supervised deaths) asserts `status-misses-0`; 69 unit tests
    and 16/16 system sessions pass.
+5. **Dirty shutdown, data-integrity class** (2026-09-13 morning, the
+   user's real root filesystem): `godelctl poweroff` called
+   `rt::sync()` and the reboot syscall, but never remounted
+   filesystems read-only, so ext4 never set its clean flag. The next
+   boot stopped with "Superblock needs_recovery flag is clear, but
+   journal has data"; the user recovered with `fsck -y`. Per the
+   runbook this is a 0.9.x blocker. Fix: `finish_shutdown()` now
+   scans `/proc/mounts` (fixed 8 KiB buffer) and best-effort remounts
+   every disk filesystem (ext2/3/4, xfs, btrfs, vfat, exfat, f2fs,
+   ntfs3) read-only before the final sync and the reboot syscall;
+   escaped mount paths are skipped. Regression: `basic.session`
+   asserts `remounting filesystems read-only` before `powering off`;
+   17/17 sessions pass. This fix is why the next real poweroff test
+   must end in a clean morning boot.
 
 ## The zen session error (not a Godel bug, fixed in the user's shell)
 
