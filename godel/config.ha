@@ -730,6 +730,13 @@ export fn start_order(s: *const set, order: *[MAX_SERVICES]size) size = {
 export fn dep_satisfied(cfg: *const service, r: *const runtime) bool = {
 	if (cfg.notification_fd != 0 && r.released) return true;
 	const completed = r.exited && classify(r.last_status) is void;
+	if (cfg.kind == service_kind::oneshot && cfg.notification_fd == 0) {
+		// A plain oneshot gates dependents until it has run to
+		// completion, whatever the exit status: after = ordering plus
+		// completion, not merely launch. A failed oneshot must not
+		// wedge boot forever, so any exit releases the gate.
+		return r.exited;
+	};
 	const started = if (cfg.kind == service_kind::oneshot)
 		r.pid > 0 || completed
 	else
@@ -768,7 +775,8 @@ export fn ready_starts(
 					break;
 				};
 				const dc = &s.services[dep];
-				if (dc.notification_fd != 0
+				if ((dc.notification_fd != 0
+						|| dc.kind == service_kind::oneshot)
 						&& !dep_satisfied(dc, &rts[dep])) {
 					ok = false;
 					break;

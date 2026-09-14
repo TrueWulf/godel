@@ -24,6 +24,26 @@ fn rfind(s: *set, name: str) size = {
 	abort("service not found");
 };
 
+@test fn ready_starts_holds_dependents_until_oneshot_completes() void = {
+	let s = set { ... };
+	rparse_ok(&s, "[service \"setup\"]\ncommand = /bin/true\ntype = oneshot\nrestart = never\n[service \"late\"]\ncommand = /bin/true\nafter = setup\n[service \"free\"]\ncommand = /bin/true\n");
+	const si = rfind(&s, "setup");
+	let rts: [MAX_SERVICES]runtime = [new_runtime()...];
+	rts[si].pid = 42;
+	let order: [MAX_SERVICES]size = [0...];
+	let n = ready_starts(&s, rts, &order);
+	assert(n == 2);
+	assert(order[0] == si);
+	assert(order[1] == rfind(&s, "free"));
+	rts[si].pid = 0;
+	rts[si].exited = true;
+	rts[si].last_status = 0;
+	n = ready_starts(&s, rts, &order);
+	assert(n == 3);
+	assert(order[1] == rfind(&s, "late"));
+	assert(order[2] == rfind(&s, "free"));
+};
+
 @test fn plain_ordering_satisfied_by_running_dependency() void = {
 	let s = set { ... };
 	rparse_ok(&s, "[service \"a\"]\ncommand = /bin/true\n[service \"b\"]\ncommand = /bin/true\nafter = a\n");
@@ -31,6 +51,21 @@ fn rfind(s: *set, name: str) size = {
 	rts[rfind(&s, "a")].pid = 42;
 	const dep = &s.services[rfind(&s, "a")];
 	assert(dep_satisfied(dep, &rts[rfind(&s, "a")]));
+};
+
+@test fn plain_oneshot_dependency_waits_for_completion() void = {
+	let s = set { ... };
+	rparse_ok(&s, "[service \"a\"]\ncommand = /bin/true\ntype = oneshot\nrestart = never\n[service \"b\"]\ncommand = /bin/true\nafter = a\n");
+	const ai = rfind(&s, "a");
+	let rts: [MAX_SERVICES]runtime = [new_runtime()...];
+	rts[ai].pid = 42;
+	assert(!dep_satisfied(&s.services[ai], &rts[ai]));
+	rts[ai].pid = 0;
+	rts[ai].exited = true;
+	rts[ai].last_status = 0;
+	assert(dep_satisfied(&s.services[ai], &rts[ai]));
+	rts[ai].last_status = 1;
+	assert(dep_satisfied(&s.services[ai], &rts[ai]));
 };
 
 @test fn notified_dependency_requires_readiness() void = {
