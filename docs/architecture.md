@@ -85,14 +85,20 @@ run-as:
 ## Readiness and start ordering
 
 `after` is start ordering: a dependent starts once its dependency has
-been started. That remains the default for every service. A service that
-declares `notification-fd = N` (N from 3 to 1024) opts into readiness:
+been started. That remains the default for every service, with one
+refinement: a plain oneshot dependency (no `notification-fd`) holds its
+dependents until it has *completed* — cleanly or not, since a failed
+mount or fsck oneshot must not wedge boot forever. This closes the
+boot race where an autologin getty ran while `mount-home` was still
+mounting `/home`. A service that declares `notification-fd = N` (N from
+3 to 1024) opts into readiness:
 it is started with the write end of a pipe at fd N and becomes ready by
 writing a newline to it; any other bytes are ignored, and the read end
 stays registered so late newlines still count. This is the same wire
 convention s6, dinit, and nitro use, so their service packs port over.
 
-Readiness changes gating only where the *dependency* opted in. A
+Readiness changes gating only where the *dependency* opted in (or is a
+plain oneshot, as above). A
 dependent of a notified service starts only after the newline (or, for a
 notified oneshot, after a clean exit). Dependents of plain services
 follow plain ordering exactly as before. A notified service that never

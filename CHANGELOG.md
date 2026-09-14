@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Fixed a boot race: a plain oneshot dependency (no `notification-fd`)
+  now holds its dependents until it has run to completion, cleanly or
+  not, instead of merely until it has started. On a fast boot the
+  autologin getty could run while `mount-home` was still mounting
+  `/home`: login fell back to `home = /`, fish could not read its config
+  directory, and the session autostart block never ran, so the user had
+  to start the compositor by hand. A failed oneshot still releases the
+  gate so a broken mount or fsck cannot wedge boot forever.
+
 ## 0.9.0 - 2026-09-12
 
 - Lifted the fixed configuration limits: the snapshot now holds 64

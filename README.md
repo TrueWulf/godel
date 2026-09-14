@@ -121,8 +121,9 @@ Keys: `command`, `after`, `restart` (`always`, `on-failure`, `never`),
 `notification-fd = N` (3..1024) holds its dependents until it writes a
 newline to fd N; s6, dinit, and nitro use the same convention.
 `readiness_timeout = 5s` bounds that wait: at the deadline the service
-is stopped, marked failed, and its dependents start. Everywhere else,
-plain ordering applies.
+is stopped, marked failed, and its dependents start. A plain oneshot
+dependency (no `notification-fd`) holds its dependents until it has run
+to completion, cleanly or not. Everywhere else, plain ordering applies.
 
 `run-as = user[:group]` drops the service to one uid/gid after the
 cgroup attach and before `execve`; there are no supplementary groups.
