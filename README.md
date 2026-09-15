@@ -174,7 +174,7 @@ an explicit start.
 
 ## Status
 
-Godel 0.9.0 is experimental. 1.0.0 waits for sustained real-system
+Godel 0.9.1 is experimental. 1.0.0 waits for sustained real-system
 testing. The supervisor is Linux-only and prefers pidfds (Linux 5.3+)
 and `cgroup.kill` (Linux 5.14+); on older kernels the SIGCHLD and
 process-group paths keep it working with less isolation. The
