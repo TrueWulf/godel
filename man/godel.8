@@ -1,0 +1,115 @@
+.TH GODEL 8 "2026-09-15" "Godel 0.9.1" "System Administration"
+.SH NAME
+godel \- static Linux init and service supervisor
+.SH SYNOPSIS
+.B godel
+.RB [ \-t
+.IR PATH ]
+.RB [ \-\-version ]
+.SH DESCRIPTION
+.B godel
+is a static init and service supervisor written in Hare. It runs as PID 1,
+parses a fixed-size configuration snapshot at boot, starts services in
+dependency order, supervises them with pidfd and epoll (no allocation and no
+threads after boot), and drives clean shutdown: services are stopped, then
+filesystems are remounted read-only before the final
+.BR sync (2)
+and the
+.BR reboot (2)
+syscall.
+.PP
+When not run as PID 1,
+.B godel
+only validates configuration and exits.
+.SH OPTIONS
+.TP
+.BI \-t " PATH"
+Parse-only validation of a configuration file, a configuration root, or a
+.I services.d
+directory. Prints
+.B OK, N service(s)
+on success or
+.IB path : line :
+.IB message
+diagnostics with a nonzero exit. Nothing is started.
+.TP
+.B \-\-version
+Print the version and exit.
+.SH CONFIGURATION
+The boot configuration merges a single file
+.I /etc/godel/services.conf
+with the directory
+.IR /etc/godel/services.d/ ,
+scanned in name order; each directory file holds exactly one service named
+after the file. A duplicate service name refuses the whole configuration.
+.PP
+A service section looks like:
+.PP
+.nf
+[service "getty-tty1"]
+command = /usr/bin/getty 38400 tty1
+type = oneshot
+restart = never
+after = rootfs-rw udev-trigger
+.fi
+.PP
+Keys:
+.BR command ", " after ", " restart " ("
+.BR always ", " on-failure ", " never
+with
+.BR restart_limit ", " restart_delay
+),
+.BR shutdown_timeout ", " env ", " type " ("
+.B service
+or
+.BR oneshot
+),
+.BR notification-fd ", " readiness_timeout ", " run-as ", " log ".
+.TP
+.B after
+Start ordering. A plain oneshot dependency holds its dependents until it has
+run to completion (any exit status). A dependency that declares
+.B notification-fd = N
+(3..1024) holds its dependents until it writes a newline to fd N, bounded by
+.BR readiness_timeout .
+.TP
+.B run-as
+Drop the child to user[:group] after the cgroup attach, before
+.BR execve (2).
+.TP
+.B log = no
+Keep service output on the console instead of a per-service log file.
+.PP
+Hard limits are deliberate: 64 services, 8 command arguments, 4 env entries,
+4
+.B after
+references per service.
+.SH FILES
+.TP
+.I /etc/godel/services.conf
+Single-file configuration.
+.TP
+.I /etc/godel/services.d/
+Directory configuration, merged in name order.
+.TP
+.I /run/godel/status
+Fixed-size status snapshot, rewritten after every state change.
+.TP
+.I /run/godel/ctl
+Control FIFO read by
+.BR godelctl (8).
+.TP
+.I /var/log/godel/
+Per-service log files (mode 0600) and the supervisor log.
+.SH SIGNALS
+.TP
+.B SIGHUP
+Reload the configuration from the same sources.
+.TP
+.B SIGUSR1
+Reboot.
+.TP
+.B SIGTERM
+Power off.
+.SH SEE ALSO
+.BR godelctl (8)

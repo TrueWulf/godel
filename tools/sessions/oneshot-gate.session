@@ -1,0 +1,47 @@
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+comment regression: a plain oneshot dependency must hold its dependents
+comment until it has completed, not merely started; the gated probe
+comment checks the marker file the slow oneshot leaves behind
+send mkdir -p /etc/godel/services.d
+expect godel# timeout=10
+send printf '[service "hostname"]\ncommand = /bin/hostname godel-gate\ntype = oneshot\nrestart = never\n' > /etc/godel/services.d/hostname.conf
+expect godel# timeout=10
+send printf '[service "rootfs-rw"]\ncommand = /bin/mount -o remount,rw /\ntype = oneshot\nrestart = never\n' > /etc/godel/services.d/rootfs-rw.conf
+expect godel# timeout=10
+send printf '[service "tmpfs-tmp"]\ncommand = /bin/mount -t tmpfs -o mode=1777 tmpfs /tmp\ntype = oneshot\nrestart = never\nafter = rootfs-rw\n' > /etc/godel/services.d/tmpfs-tmp.conf
+expect godel# timeout=10
+send printf '[service "ttyS0"]\ncommand = /bin/getty -L 115200 ttyS0 vt100\nrestart = always\nrestart_delay = 1s\nshutdown_timeout = 2s\nafter = rootfs-rw tmpfs-tmp\n' > /etc/godel/services.d/ttyS0.conf
+expect godel# timeout=10
+send printf '[service "slowsetup"]\ncommand = /bin/sh -c "sleep 2; touch /run/slowsetup-done"\ntype = oneshot\nrestart = never\n' > /etc/godel/services.d/slowsetup.conf
+expect godel# timeout=10
+send printf '[service "late"]\ncommand = /bin/sh -c "test -f /run/slowsetup-done && echo late-ok > /run/late-verdict || echo late-missing > /run/late-verdict"\nrestart = never\nafter = slowsetup\n' > /etc/godel/services.d/late.conf
+expect godel# timeout=10
+send mv /etc/godel/services.conf /root/services.conf.saved
+expect godel# timeout=10
+send godelctl reload
+expect configuration reloaded timeout=15
+
+comment the fix: late is released only after slowsetup exits, so the
+comment marker file already exists; the pre-fix race wrote late-missing
+comment service stdout lands in per-service logs, so assert via the
+comment console start ordering and the on-disk verdict file
+expect slowsetup exited cleanly timeout=15
+expect started late timeout=15
+
+send echo verdict-$(cat /run/late-verdict)
+expect verdict-late-ok timeout=10
+send echo slowsetup-state-$(awk '$1=="slowsetup"{print $2}' /run/godel/status)
+expect slowsetup-state-stopped timeout=10
+send echo late-state-$(awk '$1=="late"{print $2}' /run/godel/status)
+expect late-state-stopped timeout=10
+send echo set-size-$(wc -l < /run/godel/status)
+expect set-size-6 timeout=10
+
+send godelctl poweroff
+expect Godel: shutting down timeout=30
+expect powering off timeout=30

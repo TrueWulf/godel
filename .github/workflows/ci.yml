@@ -1,0 +1,20 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    container: alpine:3.22
+    steps:
+      - uses: actions/checkout@v4
+      - run: apk add --no-cache hare make
+      - run: hare version
+      - run: make test HARE=hare
+      - run: make HARE=hare
+      - run: ./bin/godel -t examples/desktop
+      - run: ./bin/godel -t examples/server

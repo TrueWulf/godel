@@ -5,7 +5,7 @@ use godel;
 use rt;
 use strings;
 
-def VERSION: str = "0.9.0";
+def VERSION: str = "0.9.1";
 def CONSOLE_DEVICE: str = "/dev/console";
 def KILL_PHASE_MS: i64 = 1_000;
 def SHUTDOWN_CAP_MS: i64 = 30_000;
@@ -184,8 +184,12 @@ export fn main() void = {
 	if (len(args) == 3 && args[1] == "-t") {
 		validate_path(args[2]);
 	};
+	if (len(args) == 2 && args[1] == "--version") {
+		fmt::println("godel", VERSION)!;
+		os::exit(0);
+	};
 	if (rt::getpid() != 1) {
-		fmt::errorfln("usage: godel [-t PATH] (PID 1 only otherwise)")!;
+		fmt::errorfln("usage: godel [-t PATH] [--version] (PID 1 only otherwise)")!;
 		os::exit(2);
 	};
 	mount_pseudo_filesystems();

@@ -12,3 +12,5 @@ steps:
       - hare version
       - make test HARE=hare
       - make HARE=hare
+      - ./bin/godel -t examples/desktop
+      - ./bin/godel -t examples/server

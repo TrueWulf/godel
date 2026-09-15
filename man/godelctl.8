@@ -1,0 +1,91 @@
+.TH GODELCTL 8 "2026-09-15" "Godel 0.9.1" "System Administration"
+.SH NAME
+godelctl \- control a running Godel supervisor
+.SH SYNOPSIS
+.B godelctl
+.B status
+|
+.B status
+.B \-\-json
+|
+.B list
+|
+.B uptime
+|
+.BI start " SERVICE"
+|
+.BI stop " SERVICE"
+|
+.BI catlog " SERVICE"
+|
+.B reload
+|
+.B reboot
+|
+.B poweroff
+|
+.B \-\-version
+.SH DESCRIPTION
+.B godelctl
+talks to a running Godel supervisor (PID 1) through
+.IR /run/godel/ .
+Every command that would signal PID 1 refuses to run when
+.I /run/godel/status
+is absent, so the tool is safe on dual-init machines: it will never signal
+another init by accident. Never run
+.B reload
+under a different init.
+.SH COMMANDS
+.TP
+.B status
+Print the status snapshot: one line per service with state, pid, restart
+count, and readiness.
+.TP
+.B status \-\-json
+Print the same snapshot as a single-line JSON array of objects with
+.BR name ", " state ", " pid ", " restarts ", " ready " fields."
+.TP
+.B list
+Alias for
+.BR status .
+.TP
+.B uptime
+Print supervisor uptime (from PID 1), service totals, summed restarts, and
+the number of services whose readiness timed out.
+.TP
+.BI start " SERVICE"
+Start a stopped service via the control FIFO.
+.TP
+.BI stop " SERVICE"
+Stop a running service.
+.TP
+.BI catlog " SERVICE"
+Print the service log from
+.IR /var/log/godel/ .
+.TP
+.B reload
+Ask PID 1 to re-read the configuration (SIGHUP).
+.TP
+.B reboot
+Ask PID 1 to reboot (SIGUSR1).
+.TP
+.B poweroff
+Ask PID 1 to power off (SIGTERM).
+.TP
+.B \-\-version
+Print the version and exit.
+.SH FILES
+.TP
+.I /run/godel/status
+Read: status snapshot; its presence identifies a Godel boot.
+.TP
+.I /run/godel/ctl
+Written: textual commands, one per line.
+.TP
+.I /var/log/godel/
+Per-service logs read by
+.BR catlog .
+.SH EXIT STATUS
+0 on success, 1 on errors and refusals.
+.SH SEE ALSO
+.BR godel (8)
