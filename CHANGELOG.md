@@ -1,15 +1,28 @@
 # Changelog
 
-## Unreleased
+## 0.9.1 - 2026-09-15
 
 - Fixed a boot race: a plain oneshot dependency (no `notification-fd`)
   now holds its dependents until it has run to completion, cleanly or
-  not, instead of merely until it has started. On a fast boot the
+  not, instead of merely until it has started. On a fast real-machine boot the
   autologin getty could run while `mount-home` was still mounting
   `/home`: login fell back to `home = /`, fish could not read its config
   directory, and the session autostart block never ran, so the user had
   to start the compositor by hand. A failed oneshot still releases the
-  gate so a broken mount or fsck cannot wedge boot forever.
+  gate so a broken mount or fsck cannot wedge boot forever. New
+  `oneshot-gate` scripted session covers the race end to end.
+- Added `godel --version` and `godelctl --version`.
+- Added `godelctl status --json`: the status snapshot as one line of
+  JSON (`name`, `state`, `pid`, `restarts`, `ready`) for scripts.
+- Added `godelctl uptime`: supervisor uptime, service totals, summed
+  restarts, and readiness timeouts in one line.
+- Added man pages `godel(8)` and `godelctl(8)`; `make install` now
+  installs them under `$(PREFIX)/share/man/man8`.
+- Added a GitHub Actions workflow mirroring the Codeberg Woodpecker CI
+  (unit tests, build, example-set validation in both).
+- `examples/desktop/swap.conf` keeps swapon's stderr so the per-service
+  log tells a missing swapfile from wrong permissions or holes when
+  SwapTotal reads 0.
 
 ## 0.9.0 - 2026-09-12
 

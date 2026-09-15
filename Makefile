@@ -29,6 +29,8 @@ test:
 install: bin/godel bin/godelctl
 	install -Dm755 bin/godel $(DESTDIR)$(PREFIX)/sbin/godel
 	install -Dm755 bin/godelctl $(DESTDIR)$(PREFIX)/bin/godelctl
+	install -Dm644 man/godel.8 $(DESTDIR)$(PREFIX)/share/man/man8/godel.8
+	install -Dm644 man/godelctl.8 $(DESTDIR)$(PREFIX)/share/man/man8/godelctl.8
 
 image: bin/godel bin/godelctl
 	tools/build-image.sh
