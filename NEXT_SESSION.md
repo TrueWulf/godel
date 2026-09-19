@@ -28,29 +28,31 @@ documentation stay in English.
 
 ## Open items (in priority order)
 
-1. **Autologin verification after reboot** (0.9.1 fix, still not
-   verified on metal): pick `Artix Godel v3 (zen)`, expect silent
-   `niri --session` start. `~/.cache/godel-login.log` diagnostics are
-   still armed in fish config — keep until confirmed on zen AND lts,
-   then strip.
-2. **Bug 5 closure**: evening `doas godelctl poweroff`, morning must
-   boot clean with no fsck. Formal close of the data-integrity
-   incident.
-3. **Portals** after relogin: single `pgrep -af xdg-desktop-portal`
+1. **GRUB default is now Godel** (owner decision 2026-09-20):
+   `GRUB_DEFAULT=gnulinux-godel-zen-…`, `TIMEOUT=0`, `STYLE=hidden`.
+   The dinit entries are still in the menu; recovery is hold-ESC
+   during early GRUB, or live media. This RAISES the priority of the
+   clean-shutdown verification below: the machine now boots Godel
+   unattended every time.
+2. **Bug 5 closure (now critical)**: evening `doas godelctl poweroff`,
+   next boot must be clean with no fsck. Formal close of the
+   data-integrity incident on 0.9.2 binaries.
+3. **Autologin verification after reboot** (0.9.1 fix, not yet
+   verified on metal): expect silent `niri --session` start.
+   `~/.cache/godel-login.log` diagnostics still armed in fish config —
+   keep until confirmed on zen AND lts, then strip.
+4. **Portals** after relogin: single `pgrep -af xdg-desktop-portal`
    set, Steam Flatpak, screencast + file dialogs.
-4. **swap**: swap-fstab-style stderr logging is in 0.9.1+ kit; check
-   `swap.log` and `/proc/meminfo` on next Godel boot.
-5. **suspend/resume and power button**: never tested; protocol in the
-   previous session notes (loginctl suspend, godelctl status, network,
-   clock, niri alive; power key last).
-6. **Limine backend**: next installer backend, per user request; then
-   other bootloaders.
-7. **alpine-godel**: mdev profile, OpenRC runlevel discovery, mkinitfs,
+5. **swap**: check `swap.log` and `/proc/meminfo` on next Godel boot.
+6. **suspend/resume and power button**: never tested; protocol in
+   earlier session notes.
+7. **Limine backend**: next installer backend; then other bootloaders.
+8. **alpine-godel**: mdev profile, OpenRC runlevel discovery, mkinitfs,
    extlinux backend; QEMU first, then the user's distro-hop metal.
-8. **After 0.9.5 (user decision)**: feature freeze; only code quality,
+9. **After 0.9.5 (user decision)**: feature freeze; only code quality,
    smaller/faster core, nitro-style polish. No new subsystems — keep
    the Unix-init shape (no mini-systemd drift).
-9. **vpn-cli**: the user's own console client for happd.
+10. **vpn-cli**: the user's own console client for happd.
 
 ## Roadmap to 1.0.0
 
