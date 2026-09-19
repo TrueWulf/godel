@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.2 - 2026-09-20
+
+- Added a one-command installer for Artix/Arch-family machines:
+  `doas make install-artix-grub` (or `sh tools/install.sh --bootloader
+  grub`). It detects the running kernel/initramfs/root argument, checks
+  cgroup v2 and GRUB prerequisites, generates a desktop-base service
+  set (fsck, rootfs remount, fstab mounts and swap, loopback, udev,
+  sysctl, D-Bus, elogind, NetworkManager, gettys, log sync) from what
+  is actually installed, validates it with `godel -t` before touching
+  the system, backs everything up under `/etc/godel/backups`, and adds
+  a separate `Godel (test)` GRUB entry. The default entry and
+  `GRUB_DEFAULT` are never modified; unsupported bootloaders are
+  refused, not guessed.
+- Bootloader backends are pluggable (`tools/bootloaders/grub.sh`
+  defines the contract); Limine, extlinux, and systemd-boot are planned
+  backends. A `--dry-run` prints and validates the whole plan without
+  changing anything; `ROOT=` fixture mode makes the installer fully
+  CI-testable (`tools/test-install.sh`, now part of both CIs).
+- Documented the install path in `docs/install.md`.
+
 ## 0.9.1 - 2026-09-15
 
 - Fixed a boot race: a plain oneshot dependency (no `notification-fd`)
