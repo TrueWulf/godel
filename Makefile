@@ -7,7 +7,7 @@ GODEL_SRC := $(wildcard cmd/godel/*.ha godel/*.ha)
 GODELCTL_SRC := $(wildcard cmd/godelctl/*.ha)
 QEMU_SESSION_SRC := $(wildcard cmd/qemu-session/*.ha)
 
-.PHONY: all test install image qemu-system qemu-reboot qemu-poweroff qemu-badconfig clean
+.PHONY: all test install install-artix-grub image qemu-system qemu-reboot qemu-poweroff qemu-badconfig clean
 
 all: bin/godel bin/godelctl bin/qemu-session
 
@@ -31,6 +31,14 @@ install: bin/godel bin/godelctl
 	install -Dm755 bin/godelctl $(DESTDIR)$(PREFIX)/bin/godelctl
 	install -Dm644 man/godel.8 $(DESTDIR)$(PREFIX)/share/man/man8/godel.8
 	install -Dm644 man/godelctl.8 $(DESTDIR)$(PREFIX)/share/man/man8/godelctl.8
+
+# One-command install for Artix/Arch-family machines with GRUB:
+# builds, installs, generates the desktop-base service set, and adds a
+# separate 'Godel (test)' boot entry; the default entry is not touched.
+# Run as root:  doas make install-artix-grub   (add DRYRUN: --dry-run via
+# sh tools/install.sh directly).
+install-artix-grub: all
+	sh tools/install.sh --bootloader grub
 
 image: bin/godel bin/godelctl
 	tools/build-image.sh
