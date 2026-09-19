@@ -77,6 +77,24 @@ step it *would* take, changing nothing.
   init-specific hooks cannot be converted safely by a script; the
   desktop base is the honest automated subset.
 
+## Troubleshooting
+
+### `reboot` / `shutdown` say "connect: No such file or directory"
+
+The util-linux `reboot` and `shutdown` binaries try to talk to systemd
+(logind's private socket), which Godel does not provide by design. Use
+the supervisor's own control path instead:
+
+```sh
+doas godelctl reboot
+doas godelctl poweroff
+```
+
+Do **not** use `reboot -f`: it triggers the reboot syscall directly,
+bypassing Godel's clean-shutdown path (services stopped, filesystems
+remounted read-only, sync). That is how dirty ext4 journals and fsck
+prompts come back.
+
 ## The fixture test
 
 CI runs `tools/test-install.sh`, which builds a fake root tree
