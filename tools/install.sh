@@ -9,9 +9,9 @@
 #     boot configuration changes;
 #   - unsupported bootloaders are refused, not guessed.
 #
-# Scope for this release: Artix/Arch family + desktop-base profile.
-# Bootloader support: grub (implemented); limine/extlinux/systemd-boot
-# are future backends and are refused with a clear message.
+# Scope for this release: capability-detected desktop-base profile.
+# Artix/Arch and Void are fixture-tested; other recognised distributions
+# are preview targets until their native device/initramfs profiles land.
 #
 # Usage:
 #   doas sh tools/install.sh --bootloader grub [--dry-run] [--force]
@@ -80,8 +80,14 @@ test -x bin/godelctl || die "bin/godelctl missing; run make first"
 # --- distro ----------------------------------------------------------------
 . "$ROOT/etc/os-release" 2>/dev/null || die "$ROOT/etc/os-release not readable"
 case "${ID:-}:${ID_LIKE:-}" in
-artix:* | arch:* | *:arch*) ;;
-*) die "unsupported distro '${ID:-unknown}': this installer supports the Artix/Arch family" ;;
+artix:* | arch:* | void:* | alpine:* | debian:* | ubuntu:* | fedora:* | opensuse*:* | gentoo:* | *:arch* | *:debian*)
+	info "detected distro: ${ID:-unknown}"
+	;;
+nixos:*) die "NixOS manages boot and services declaratively; use a native module, not this installer" ;;
+*)
+	[ -n "$FORCE" ] || die "unsupported distro '${ID:-unknown}'; pass --force only after reviewing the generated dry-run"
+	info "continuing on unrecognised distro '${ID:-unknown}' because --force was supplied"
+	;;
 esac
 
 # --- kernel / initramfs / root ---------------------------------------------
@@ -101,10 +107,18 @@ if [ -z "$KERNEL" ]; then
 fi
 [ -f "$ROOT$KERNEL" ] || die "kernel $ROOT$KERNEL not found"
 
-kname=${KERNEL#/boot/}
+kname=${KERNEL##*/}
 kname=${kname#vmlinuz-}
-INITRD=/boot/initramfs-$kname.img
-[ -f "$ROOT$INITRD" ] || die "initramfs $ROOT$INITRD not found (mkinitcpio naming expected)"
+INITRD=
+for candidate in \
+	"/boot/initramfs-$kname.img" \
+	"/boot/initrd.img-$kname" \
+	"/boot/initrd-$kname.img" \
+	"/boot/initramfs.img" \
+	"/boot/initrd.img"; do
+	if [ -f "$ROOT$candidate" ]; then INITRD=$candidate; break; fi
+done
+[ -n "$INITRD" ] || die "cannot find an initramfs for $KERNEL under /boot"
 
 [ -f "$ROOT/sys/fs/cgroup/cgroup.controllers" ] ||
 	die "cgroup v2 unavailable (no cgroup.controllers); Godel requires a unified hierarchy"
@@ -231,30 +245,46 @@ else
 	skip net-lo "ip(8) not found"
 fi
 
-if have /usr/bin/udevd; then
+UDEVD=
+for p in /usr/bin/udevd /sbin/udevd /usr/lib/udev/udevd /usr/lib/systemd/systemd-udevd; do
+	have "$p" && UDEVD=$p && break
+done
+UDEVADM=
+for p in /usr/bin/udevadm /sbin/udevadm; do
+	have "$p" && UDEVADM=$p && break
+done
+if [ -n "$UDEVD" ]; then
 	conf udev "[service \"udev\"]
-command = /usr/bin/udevd
+command = $UDEVD
 restart = on-failure
 restart_delay = 1s
 after = rootfs-rw"
+	if [ -n "$UDEVADM" ]; then
 	conf udev-trigger "[service \"udev-trigger\"]
-command = /bin/sh -c \"udevadm trigger -c add && udevadm settle\"
+command = /bin/sh -c \"$UDEVADM trigger -c add && $UDEVADM settle\"
 type = oneshot
 restart = never
 after = udev"
+	else
+		skip udev-trigger "udevadm not found"
+	fi
 else
 	skip udev "udevd not found (mdev support ships with the Alpine profile)"
 fi
 
-if [ -f "$stage/udev-trigger.conf" ]; then
+SYSCTL=
+for p in /usr/bin/sysctl /sbin/sysctl /usr/sbin/sysctl; do
+	have "$p" && SYSCTL=$p && break
+done
+if [ -n "$SYSCTL" ] && [ -f "$stage/udev-trigger.conf" ]; then
 	conf sysctl "[service \"sysctl\"]
-command = /usr/bin/sysctl --system
+command = $SYSCTL --system
 type = oneshot
 restart = never
 after = udev-trigger"
-elif have /usr/bin/sysctl; then
+elif [ -n "$SYSCTL" ]; then
 	conf sysctl "[service \"sysctl\"]
-command = /usr/bin/sysctl --system
+command = $SYSCTL --system
 type = oneshot
 restart = never
 after = rootfs-rw"
@@ -263,41 +293,68 @@ else
 fi
 
 after_dbus="rootfs-rw"
-if have /usr/bin/dbus-daemon; then
+DBUS_DAEMON=
+for p in /usr/bin/dbus-daemon /bin/dbus-daemon /usr/sbin/dbus-daemon; do
+	have "$p" && DBUS_DAEMON=$p && break
+done
+after_desktop="$after_dbus"
+if [ -n "$DBUS_DAEMON" ]; then
 	[ -f "$stage/net-lo.conf" ] && after_dbus="rootfs-rw net-lo"
 	conf dbus "[service \"dbus\"]
-command = /bin/sh -c \"mkdir -p /run/dbus && exec /usr/bin/dbus-daemon --system --nofork --nopidfile --print-address=3\"
+command = /bin/sh -c \"mkdir -p /run/dbus && exec $DBUS_DAEMON --system --nofork --nopidfile --print-address=3\"
 notification-fd = 3
 readiness_timeout = 15s
 restart = on-failure
 restart_delay = 1s
 after = $after_dbus"
+	after_desktop="dbus"
 else
 	skip dbus "dbus-daemon not found"
 fi
 
-if have /usr/lib/elogind/elogind; then
+ELOGIND=
+for p in /usr/lib/elogind/elogind /usr/libexec/elogind/elogind /usr/lib64/elogind/elogind /usr/sbin/elogind; do
+	have "$p" && ELOGIND=$p && break
+done
+if [ -n "$ELOGIND" ]; then
 	conf elogind "[service \"elogind\"]
-command = /usr/lib/elogind/elogind --daemon
+command = $ELOGIND --daemon
 type = oneshot
 restart = never
-after = $after_dbus"
+after = $after_desktop"
 else
 	skip elogind "elogind not found"
 fi
 
-if have /usr/bin/NetworkManager; then
+NETWORKMANAGER=
+for p in /usr/bin/NetworkManager /usr/sbin/NetworkManager; do
+	have "$p" && NETWORKMANAGER=$p && break
+done
+if [ -n "$NETWORKMANAGER" ]; then
 	conf networkmanager "[service \"networkmanager\"]
-command = /usr/bin/NetworkManager -n
+command = $NETWORKMANAGER -n
 restart = on-failure
 restart_delay = 2s
-after = $after_dbus"
+after = $after_desktop"
 else
-	skip networkmanager "NetworkManager not found"
+	DHCPCD=
+	for p in /usr/bin/dhcpcd /sbin/dhcpcd /usr/sbin/dhcpcd; do
+		have "$p" && DHCPCD=$p && break
+	done
+	if [ -n "$DHCPCD" ]; then
+		conf dhcpcd "[service \"dhcpcd\"]
+command = $DHCPCD -B -q
+restart = on-failure
+restart_delay = 2s
+after = rootfs-rw"
+	else
+		skip network "NetworkManager and dhcpcd not found"
+	fi
 fi
 
 if [ -n "$AGETTY" ]; then
-	after_getty="rootfs-rw udev-trigger"
+	after_getty="rootfs-rw"
+	[ -f "$stage/udev-trigger.conf" ] && after_getty="$after_getty udev-trigger"
 	[ -f "$stage/mount-fstab.conf" ] && after_getty="$after_getty mount-fstab"
 	for tty in 1 2; do
 		conf "getty-tty$tty" "[service \"getty-tty$tty\"]
@@ -345,7 +402,7 @@ fi
 # --- bootloader -------------------------------------------------------------
 backend=tools/bootloaders/$BOOTLOADER.sh
 test -f "$backend" ||
-	die "unknown bootloader '$BOOTLOADER' (available: grub; limine/extlinux/systemd-boot are future backends)"
+	die "unknown bootloader '$BOOTLOADER' (available: grub, limine, extlinux, systemd-boot, refind)"
 # shellcheck disable=SC1090
 . "$backend"
 

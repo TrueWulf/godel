@@ -1,4 +1,4 @@
-# Next Session: Godel 0.9.2 — installer, soak toward 1.0.0
+# Next Session: Godel 0.9.3 — compatibility, soak toward 1.0.0
 
 ## Language rule
 
@@ -7,13 +7,17 @@ documentation stay in English.
 
 ## Current state (2026-09-20)
 
-- **0.9.2 is released**: on Codeberg and GitHub, tag `v0.9.2` (commit
-  `ae14e30`). Highlights: the one-command installer
-  (`doas make install-artix-grub`) with a pluggable bootloader-backend
-  contract (GRUB implemented; limine/extlinux/systemd-boot planned),
-  desktop-base profile generation from what is actually installed,
-  dry-run mode, fixture-mode CI test (`tools/test-install.sh` in both
-  CIs), `docs/install.md`.
+- **0.9.3 is ready**: compatibility-only release, no PID 1 behavior
+  changes. Installer backends cover GRUB, Limine current/legacy syntax,
+  extlinux/syslinux, systemd-boot, and rEFInd. The profile detects
+  Artix/Arch and Void fixtures plus preview-capability paths for Alpine,
+  Debian/Ubuntu, Fedora, openSUSE, and Gentoo. Initramfs names include
+  Arch/Fedora/Void and Debian forms. `make install-godel BOOTLOADER=...`
+  is the generic command; `install-artix-grub` remains an alias.
+- **0.9.3 verification**: 71 unit tests, 18 QEMU sessions, the original
+  Artix/GRUB fixture, and a compatibility matrix for Void + Limine
+  current/legacy, extlinux, systemd-boot, and rEFInd all pass. Every
+  fixture preserves the existing boot default and is idempotent.
 - The installer is for FRESH machines. This machine keeps its own
   protocol: `~/godel-host/apply.sh` (the installer refuses to run here
   because `/etc/godel/services.d` is non-empty — that guard is by
@@ -46,9 +50,12 @@ documentation stay in English.
 5. **swap**: check `swap.log` and `/proc/meminfo` on next Godel boot.
 6. **suspend/resume and power button**: never tested; protocol in
    earlier session notes.
-7. **Limine backend**: next installer backend; then other bootloaders.
-8. **alpine-godel**: mdev profile, OpenRC runlevel discovery, mkinitfs,
-   extlinux backend; QEMU first, then the user's distro-hop metal.
+7. **Void + Limine real-machine verification**: the compatibility
+   matrix is fixture-only; test the friend's actual config path and
+   Limine version with backups before booting.
+8. **alpine-godel**: mdev profile, OpenRC runlevel discovery, mkinitfs;
+   current installer only does capability preview there, not a claimed
+   complete Alpine desktop profile.
 9. **After 0.9.5 (user decision)**: feature freeze; only code quality,
    smaller/faster core, nitro-style polish. No new subsystems — keep
    the Unix-init shape (no mini-systemd drift).
@@ -57,9 +64,10 @@ documentation stay in English.
 ## Roadmap to 1.0.0
 
 Stage 4 soak (weeks of daily driving), every deviation recorded.
-Blockers are data-loss or boot-lock bugs only; the default GRUB entry
-stays on dinit until none remain. Then: AUR `godel-bin` (man pages
-already ship), more distro example sets, installer backends. 1.0.0 =
+Blockers are data-loss or boot-lock bugs only. The owner has selected
+Godel as the hidden GRUB default; dinit entries remain as recovery.
+Then: AUR `godel-bin` (man pages already ship), more distro example
+sets, installer backends. 1.0.0 =
 quiet weeks + no open blockers + docs current.
 
 ## Session protocol on the user's machine

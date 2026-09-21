@@ -19,3 +19,4 @@ jobs:
       - run: ./bin/godel -t examples/desktop
       - run: ./bin/godel -t examples/server
       - run: sh tools/test-install.sh
+      - run: sh tools/test-compat-install.sh

@@ -15,3 +15,4 @@ steps:
       - ./bin/godel -t examples/desktop
       - ./bin/godel -t examples/server
       - sh tools/test-install.sh
+      - sh tools/test-compat-install.sh
