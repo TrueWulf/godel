@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.3 - 2026-09-20
+
+- Expanded the compatibility installer from GRUB-only Artix/Arch to a
+  capability-detected desktop-base profile for Artix/Arch, Void, Alpine,
+  Debian/Ubuntu, Fedora, openSUSE, and Gentoo. The profile searches
+  distro-native paths for udev, elogind, D-Bus, sysctl, getty, and
+  networking; NetworkManager falls back to dhcpcd. It recognises common
+  initramfs names from Arch/Fedora/Void and Debian.
+- Added bootloader backends for Limine (current `limine.conf` and legacy
+  `limine.cfg` syntax, auto-detected), extlinux/syslinux, systemd-boot,
+  and rEFInd. Every backend adds only a separate `Godel (test)` entry,
+  preserves the existing default selection, creates a backup, and
+  verifies its result. `make install-godel BOOTLOADER=<name>` is the
+  generic entry point.
+- Added a five-backend Void fixture matrix to CI. It validates generated
+  services, legacy/current Limine syntax, idempotent entries, and that
+  Limine timeout/default, extlinux DEFAULT, systemd-boot loader.conf,
+  and rEFInd default_selection stay unchanged.
+
 ## 0.9.2 - 2026-09-20
 
 - Added a one-command installer for Artix/Arch-family machines:

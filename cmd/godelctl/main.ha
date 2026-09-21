@@ -10,7 +10,7 @@ use time;
 const USAGE: str =
 	"usage: godelctl status|status --json|list|uptime|start <service>|stop <service>|catlog <service>|reload|reboot|poweroff";
 
-const VERSION: str = "0.9.2";
+const VERSION: str = "0.9.3";
 
 fn bytes_eq(a: []u8, b: []u8) bool = {
 	if (len(a) != len(b)) return false;

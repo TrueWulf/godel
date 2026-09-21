@@ -7,7 +7,7 @@ GODEL_SRC := $(wildcard cmd/godel/*.ha godel/*.ha)
 GODELCTL_SRC := $(wildcard cmd/godelctl/*.ha)
 QEMU_SESSION_SRC := $(wildcard cmd/qemu-session/*.ha)
 
-.PHONY: all test install install-artix-grub image qemu-system qemu-reboot qemu-poweroff qemu-badconfig clean
+.PHONY: all test install install-godel install-artix-grub image qemu-system qemu-reboot qemu-poweroff qemu-badconfig clean
 
 all: bin/godel bin/godelctl bin/qemu-session
 
@@ -37,6 +37,10 @@ install: bin/godel bin/godelctl
 # separate 'Godel (test)' boot entry; the default entry is not touched.
 # Run as root:  doas make install-artix-grub   (add DRYRUN: --dry-run via
 # sh tools/install.sh directly).
+install-godel: all
+	test -n "$(BOOTLOADER)" || { echo "set BOOTLOADER=grub|limine|extlinux|systemd-boot|refind" >&2; exit 2; }
+	sh tools/install.sh --bootloader "$(BOOTLOADER)"
+
 install-artix-grub: all
 	sh tools/install.sh --bootloader grub
 
