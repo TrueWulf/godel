@@ -5,7 +5,7 @@ use godel;
 use rt;
 use strings;
 
-def VERSION: str = "0.9.3";
+def VERSION: str = "0.9.4";
 def CONSOLE_DEVICE: str = "/dev/console";
 def KILL_PHASE_MS: i64 = 1_000;
 def SHUTDOWN_CAP_MS: i64 = 30_000;
@@ -124,10 +124,23 @@ const DEVPTS_OPTS: [29]u8 = [
 ];
 const RESCUE_CS: [8]u8 = ['/', 'b', 'i', 'n', '/', 's', 'h', 0];
 
+// Every supervisor log line is prefixed with the monotonic clock reading
+// so boot and shutdown profiles are computable from supervisor.log alone.
+// CLOCK_MONOTONIC starts near kernel init, so T+N is the kernel-relative
+// boot timeline. The stamp is a PID 1 feature only: `godel -t` output
+// stays bare.
+let stamp_log = false;
+
 fn logf(f: str, args: fmt::field...) void = {
 	let buf: [512]u8 = [0...];
-	const line = fmt::bsprintf(buf, f, args...)!;
-	godel::write_bytes(&logger, strings::toutf8(line));
+	if (stamp_log) {
+		const head = fmt::bsprintf(buf, "[T+{}ms] ", godel::now_ms())!;
+		const line = fmt::bsprintf(buf[len(head)..], f, args...)!;
+		godel::write_bytes(&logger, buf[..len(head) + len(line)]);
+	} else {
+		const line = fmt::bsprintf(buf, f, args...)!;
+		godel::write_bytes(&logger, strings::toutf8(line));
+	};
 };
 
 fn state_name(state: godel::state) str = switch (state) {
@@ -192,6 +205,7 @@ export fn main() void = {
 		fmt::errorfln("usage: godel [-t PATH] [--version] (PID 1 only otherwise)")!;
 		os::exit(2);
 	};
+	stamp_log = true;
 	mount_pseudo_filesystems();
 	ctl_fd = mount_runtime();
 	connect_console();
@@ -650,6 +664,7 @@ fn begin_shutdown(mode: shutdown_action) void = {
 	if (rescue_pid > 0) godel::kill_process_group(rescue_pid, rt::SIGTERM);
 	if (longest > SHUTDOWN_CAP_MS) longest = SHUTDOWN_CAP_MS;
 	shutdown.deadline = godel::now_ms() + longest;
+	logf("godel: shutdown deadline in {} ms\n", longest);
 };
 
 fn on_timer() void = {
@@ -674,7 +689,12 @@ fn on_timer() void = {
 			if (rescue_pid > 0) {
 				godel::kill_process_group(rescue_pid, rt::SIGKILL);
 			};
-			logf("godel: sending SIGKILL to remaining services\n");
+			let hung: size = 0;
+			for (let i = 0z; i < godel::MAX_SERVICES; i += 1) {
+				if (svcs[i].pid > 0 || dying[i].used) hung += 1;
+			};
+			logf("godel: sending SIGKILL to remaining services ({} hung)\n",
+				hung: i64);
 		} else {
 			finish_shutdown();
 		};
@@ -895,8 +915,12 @@ fn finish_shutdown() never = {
 		};
 	};
 	logf("Godel: remounting filesystems read-only\n");
+	const ro_started = godel::now_ms();
 	remount_ro_all();
+	const sync_started = godel::now_ms();
 	rt::sync();
+	logf("godel: remount-ro took {} ms; sync took {} ms\n",
+		sync_started - ro_started, godel::now_ms() - sync_started);
 	logf("Godel: {} now\n",
 		if (shutdown.mode == shutdown_action::reboot) "rebooting"
 		else "powering off");

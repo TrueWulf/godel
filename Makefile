@@ -7,7 +7,9 @@ GODEL_SRC := $(wildcard cmd/godel/*.ha godel/*.ha)
 GODELCTL_SRC := $(wildcard cmd/godelctl/*.ha)
 QEMU_SESSION_SRC := $(wildcard cmd/qemu-session/*.ha)
 
-.PHONY: all test install install-godel install-artix-grub image qemu-system qemu-reboot qemu-poweroff qemu-badconfig clean
+KERNEL ?= /boot/vmlinuz-linux-lts
+
+.PHONY: all test install install-godel install-artix-grub image qemu-system qemu-reboot qemu-poweroff qemu-badconfig alpine-image qemu-alpine clean
 
 all: bin/godel bin/godelctl bin/qemu-session
 
@@ -46,6 +48,14 @@ install-artix-grub: all
 
 image: bin/godel bin/godelctl
 	tools/build-image.sh
+
+alpine-image: bin/godel bin/godelctl
+	doas sh tools/build-alpine.sh
+
+qemu-alpine: alpine-image
+	bin/qemu-session --kernel $(KERNEL) --disk .image/alpine.ext4 \
+		--script tools/sessions/alpine-mdev.session \
+		--log .image/logs/alpine-mdev.log
 
 qemu-system: image
 	tools/run-system.sh
