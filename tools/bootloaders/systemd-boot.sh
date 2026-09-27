@@ -19,8 +19,12 @@ bl_detect() {
 }
 
 bl_backup() {
-	[ -e "$SYSTEMD_BOOT_ENTRY" ] &&
+	# A first install has no previous entry file; nothing to back up.
+	# The explicit return keeps set -e happy when the file is absent.
+	if [ -e "$SYSTEMD_BOOT_ENTRY" ]; then
 		run cp -a "$SYSTEMD_BOOT_ENTRY" "$ROOT/etc/godel/backups/godel-test.conf.bak-$1"
+	fi
+	return 0
 }
 
 bl_add_entry() {

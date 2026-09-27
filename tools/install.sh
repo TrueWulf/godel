@@ -90,6 +90,44 @@ nixos:*) die "NixOS manages boot and services declaratively; use a native module
 	;;
 esac
 
+# --- OpenRC runlevel discovery (capability source, never executed) ----------
+# Alpine and OpenRC-based systems describe their boot capabilities as
+# symlink farms under /etc/runlevels. Godel reads the names only: they
+# decide what the generated profile must cover and what cannot be
+# transferred. OpenRC scripts themselves are never run by Godel.
+OPENRC_MAPPED=" devfs mdev mdevd udev udev-trigger hwdrivers sysctl sysfs
+ sysfsconf hostname swap localmount root fsck procfs loopback net.lo
+ hwclock swclock urandom seedrng savecache dmesg klogd termencoding
+ keymaps consolefont "
+
+openrc_report() {
+	[ -d "$ROOT/etc/runlevels" ] || return 0
+	info "OpenRC runlevels found; reading them as a capability source (never executed)"
+	for rl in sysinit boot default; do
+		rl_dir=$ROOT/etc/runlevels/$rl
+		[ -d "$rl_dir" ] || continue
+		names=$(ls "$rl_dir" 2>/dev/null | tr '\n' ' ')
+		[ -n "$names" ] || continue
+		info "  runlevel $rl: $(printf '%s' "$names" | cut -c1-160)"
+		for entry in "$rl_dir"/*; do
+			# runlevel entries are symlinks; the link itself is the
+			# capability signal, even if its target is missing
+			[ -L "$entry" ] || [ -e "$entry" ] || continue
+			case "$OPENRC_MAPPED" in
+			*" ${entry##*/} "*) ;;
+			*) OPENRC_EXTRA="$OPENRC_EXTRA ${entry##*/}" ;;
+			esac
+		done
+	done
+	if [ -n "${OPENRC_EXTRA:-}" ]; then
+		info "  not transferred by this profile (OpenRC-only capabilities):"
+		info "    $(printf '%s' "$OPENRC_EXTRA" | cut -c1-200)"
+		info "  add Godel services for these or accept the capability loss"
+	fi
+}
+OPENRC_EXTRA=
+openrc_report
+
 # --- kernel / initramfs / root ---------------------------------------------
 if [ -z "$KERNEL" ]; then
 	cmdline=$(cat "$CMDLINE_FILE" 2>/dev/null) || die "cannot read $CMDLINE_FILE"
@@ -112,6 +150,7 @@ kname=${kname#vmlinuz-}
 INITRD=
 for candidate in \
 	"/boot/initramfs-$kname.img" \
+	"/boot/initramfs-$kname" \
 	"/boot/initrd.img-$kname" \
 	"/boot/initrd-$kname.img" \
 	"/boot/initramfs.img" \
@@ -119,6 +158,16 @@ for candidate in \
 	if [ -f "$ROOT$candidate" ]; then INITRD=$candidate; break; fi
 done
 [ -n "$INITRD" ] || die "cannot find an initramfs for $KERNEL under /boot"
+
+# --- initramfs generator (informational) ------------------------------------
+MKINITFS=
+for p in /usr/sbin/mkinitfs /sbin/mkinitfs; do
+	have "$p" && MKINITFS=$p && break
+done
+DRACUT=
+for p in /usr/bin/dracut /usr/sbin/dracut; do
+	have "$p" && DRACUT=$p && break
+done
 
 [ -f "$ROOT/sys/fs/cgroup/cgroup.controllers" ] ||
 	die "cgroup v2 unavailable (no cgroup.controllers); Godel requires a unified hierarchy"
@@ -268,8 +317,34 @@ after = udev"
 	else
 		skip udev-trigger "udevadm not found"
 	fi
-else
-	skip udev "udevd not found (mdev support ships with the Alpine profile)"
+	else
+		# busybox mdev: the device manager of musl userlands
+		# (Alpine and similar small distributions)
+		MDEV=
+		for p in /bin/mdev /sbin/mdev /usr/bin/mdev /usr/sbin/mdev; do
+			have "$p" && MDEV=$p && break
+		done
+	if [ -n "$MDEV" ]; then
+		MDEV_CONF=missing
+		[ -f "$ROOT/etc/mdev.conf" ] && MDEV_CONF=present
+		# The hotplug helper only exists on kernels with
+		# CONFIG_UEVENT_HELPER; devtmpfs and the initial scan cover
+		# device nodes either way. Report the kernel-dependent part
+		# instead of failing.
+		if [ -e "$ROOT/proc/sys/kernel/hotplug" ]; then
+			info "mdev hotplug helper: available"
+		else
+			info "mdev hotplug helper: unavailable (kernel without CONFIG_UEVENT_HELPER); devtmpfs + mdev -s cover device nodes"
+		fi
+		conf mdev "[service \"mdev\"]
+command = /bin/sh -c \"if [ -e /proc/sys/kernel/hotplug ]; then echo $MDEV > /proc/sys/kernel/hotplug; fi; $MDEV -s\"
+type = oneshot
+restart = never
+after = rootfs-rw"
+		info "device manager: mdev ($MDEV), /etc/mdev.conf $MDEV_CONF"
+	else
+		skip device-manager "neither udevd nor mdev found"
+	fi
 fi
 
 SYSCTL=
@@ -355,6 +430,7 @@ fi
 if [ -n "$AGETTY" ]; then
 	after_getty="rootfs-rw"
 	[ -f "$stage/udev-trigger.conf" ] && after_getty="$after_getty udev-trigger"
+	[ -f "$stage/mdev.conf" ] && after_getty="$after_getty mdev"
 	[ -f "$stage/mount-fstab.conf" ] && after_getty="$after_getty mount-fstab"
 	for tty in 1 2; do
 		conf "getty-tty$tty" "[service \"getty-tty$tty\"]
@@ -417,6 +493,8 @@ echo "----------------------------------------------------------"
 info "Godel installed:"
 info "  kernel/initrd : $KERNEL / $INITRD"
 info "  root arg      : $ROOTARG"
+[ -n "$MKINITFS" ] && info "  initramfs gen : $MKINITFS (already built: $INITRD)"
+[ -n "$DRACUT" ] && info "  initramfs gen : $DRACUT (already built: $INITRD)"
 info "  services      :$ENABLED"
 [ -n "$SKIPPED" ] && info "  skipped       : $SKIPPED"
 info "next steps:"

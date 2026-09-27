@@ -125,5 +125,121 @@ test_refind() {
 	rm -rf "$fx"
 }
 
+alpine_fixture() {
+	fx=$(mktemp -d /tmp/godel-compat.XXXXXX)
+	mkdir -p "$fx/etc/godel" "$fx/usr/bin" "$fx/usr/sbin" "$fx/sbin" \
+		"$fx/usr/libexec/elogind" "$fx/sys/fs/cgroup" "$fx/boot" \
+		"$fx/etc/runlevels/sysinit" "$fx/etc/runlevels/boot" \
+		"$fx/etc/runlevels/default"
+	printf 'ID=alpine\n' > "$fx/etc/os-release"
+	cat > "$fx/etc/fstab" <<'EOF'
+/dev/sda1 / ext4 defaults 0 1
+UUID=11112222-3333-4444-5555-666677778888 /home ext4 defaults 0 2
+/swapfile none swap defaults 0 0
+EOF
+	: > "$fx/boot/vmlinuz-lts"
+	: > "$fx/boot/initramfs-lts"
+	: > "$fx/sys/fs/cgroup/cgroup.controllers"
+	for b in agetty dbus-daemon NetworkManager sysctl ip dmesg; do
+		: > "$fx/usr/bin/$b"; chmod 755 "$fx/usr/bin/$b"
+	done
+	: > "$fx/sbin/mdev"; chmod 755 "$fx/sbin/mdev"
+	: > "$fx/etc/mdev.conf"
+	: > "$fx/usr/sbin/fsck.ext4"; chmod 755 "$fx/usr/sbin/fsck.ext4"
+	: > "$fx/usr/sbin/mkinitfs"; chmod 755 "$fx/usr/sbin/mkinitfs"
+	: > "$fx/usr/libexec/elogind/elogind"; chmod 755 "$fx/usr/libexec/elogind/elogind"
+	ln -s /sbin/mdev "$fx/etc/runlevels/sysinit/mdev"
+	ln -s /sbin/devfs "$fx/etc/runlevels/sysinit/devfs"
+	ln -s /etc/init.d/sysctl "$fx/etc/runlevels/boot/sysctl"
+	ln -s /etc/init.d/hostname "$fx/etc/runlevels/boot/hostname"
+	ln -s /etc/init.d/swap "$fx/etc/runlevels/boot/swap"
+	ln -s /etc/init.d/hwclock "$fx/etc/runlevels/boot/hwclock"
+	ln -s /etc/init.d/local "$fx/etc/runlevels/default/local"
+	# BOOT_IMAGE names the unversioned Alpine kernel; the installer must
+	# find initramfs-lts (no .img suffix) for it.
+	printf 'BOOT_IMAGE=/boot/vmlinuz-lts root=UUID=alpine-root ro quiet\n' > "$fx/cmdline"
+}
+
+assert_alpine_common() {
+	run_log=$1
+	grep -q "device manager: mdev" "$run_log" ||
+		{ echo "test-compat-install: alpine mdev not selected" >&2; exit 1; }
+	grep -q "runlevel boot: " "$run_log" ||
+		{ echo "test-compat-install: openrc runlevels not reported" >&2; exit 1; }
+	grep -q "not transferred" "$run_log" ||
+		{ echo "test-compat-install: openrc gaps not reported" >&2; exit 1; }
+	grep -q "kernel/initrd : /boot/vmlinuz-lts / /boot/initramfs-lts" "$run_log" ||
+		{ echo "test-compat-install: alpine initramfs-lts not used" >&2; exit 1; }
+	grep -q "initramfs gen : /usr/sbin/mkinitfs" "$run_log" ||
+		{ echo "test-compat-install: mkinitfs not reported" >&2; exit 1; }
+	[ -f "$fx/etc/godel/services.d/mdev.conf" ] ||
+		{ echo "test-compat-install: mdev service missing" >&2; exit 1; }
+	[ ! -e "$fx/etc/godel/services.d/udev.conf" ] ||
+		{ echo "test-compat-install: udev must not be generated for mdev systems" >&2; exit 1; }
+	grep -q "mdev" "$fx/etc/godel/services.d/getty-tty1.conf" ||
+		{ echo "test-compat-install: getty does not gate on mdev" >&2; exit 1; }
+	bin/godel -t "$fx/etc/godel/services.d" >/dev/null ||
+		{ echo "test-compat-install: alpine services invalid" >&2; exit 1; }
+}
+
+test_alpine_extlinux() {
+	alpine_fixture
+	mkdir -p "$fx/boot/extlinux"
+	cat > "$fx/boot/extlinux/extlinux.conf" <<'EOF'
+DEFAULT lts
+LABEL lts
+  LINUX /boot/vmlinuz-lts
+  INITRD /boot/initramfs-lts
+EOF
+	run_install extlinux
+	assert_alpine_common "$fx/run.log"
+	assert_twice "$fx/boot/extlinux/extlinux.conf" '^LABEL godel-test$'
+	grep -q '^DEFAULT lts$' "$fx/boot/extlinux/extlinux.conf"
+	grep -q 'INITRD.*initramfs-lts' "$fx/boot/extlinux/extlinux.conf"
+	run_install extlinux
+	assert_twice "$fx/boot/extlinux/extlinux.conf" '^LABEL godel-test$'
+	rm -rf "$fx"
+}
+
+test_alpine_grub() {
+	alpine_fixture
+	mkdir -p "$fx/etc/grub.d" "$fx/etc/default" "$fx/boot/grub"
+	cat > "$fx/etc/grub.d/40_custom" <<'EOF'
+#!/bin/sh
+exec tail -n +3 $0
+menuentry 'Alpine Linux' --id alpine {
+	linux /boot/vmlinuz-lts root=UUID=alpine-root ro
+	initrd /boot/initramfs-lts
+}
+EOF
+	printf 'GRUB_DEFAULT=0\nGRUB_TIMEOUT=3\n' > "$fx/etc/default/grub"
+	printf 'placeholder cfg\n' > "$fx/boot/grub/grub.cfg"
+	cat > "$fx/fake-mkconfig.sh" <<'EOF'
+#!/bin/sh
+[ "$1" = "-o" ] || exit 1
+{
+	echo "menuentry 'Alpine Linux' --id alpine { }"
+	echo "menuentry 'Godel (test)' --id gnulinux-godel-test { }"
+} > "$2"
+EOF
+	chmod 755 "$fx/fake-mkconfig.sh"
+	env ROOT="$fx" CMDLINE_FILE="$fx/cmdline" ROOTDEV=/dev/sda1 ROOTFSTYPE=ext4 \
+		GRUB_MKCONFIG="$fx/fake-mkconfig.sh" \
+		sh tools/install.sh --bootloader grub --force > "$fx/run.log" 2>&1 || {
+		cat "$fx/run.log"; echo "test-compat-install: alpine grub install failed" >&2; exit 1;
+	}
+	assert_alpine_common "$fx/run.log"
+	[ "$(grep -c "menuentry 'Godel (test)'" "$fx/etc/grub.d/40_custom")" = 1 ]
+	[ "$(md5sum "$fx/etc/default/grub" | cut -d' ' -f1)" != "" ]
+	grep -q '^GRUB_DEFAULT=0$' "$fx/etc/default/grub"
+	rm -rf "$fx"
+}
+
 test_limine_new
-echo "test-compat-install: all checks passed"
+test_limine_legacy
+test_extlinux
+test_systemd_boot
+test_refind
+test_alpine_extlinux
+test_alpine_grub
+echo "test-compat-install: all checks passed (limine current/legacy, extlinux, systemd-boot, refind, alpine extlinux/grub)"

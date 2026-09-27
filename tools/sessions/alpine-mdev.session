@@ -1,0 +1,37 @@
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel-alpine:~# 
+
+comment the hotplug helper is kernel-dependent (CONFIG_UEVENT_HELPER);
+comment report which variant this kernel offers, the scan must pass either way
+send if [ -e /proc/sys/kernel/hotplug ]; then echo hotplug-helper-$(cat /proc/sys/kernel/hotplug); else echo hotplug-helper-absent; fi
+expect hotplug-helper- timeout=10
+expect godel-alpine:~# timeout=10
+
+comment a second scan is idempotent and exits cleanly
+send /sbin/mdev -s && echo rescan-ok
+expect rescan-ok timeout=10
+expect godel-alpine:~# timeout=10
+
+comment device nodes exist under the musl/busybox userland
+send test -c /dev/null && echo devnodes-ok
+expect devnodes-ok timeout=10
+expect godel-alpine:~# timeout=10
+
+comment the supervisor timeline recorded exactly one clean mdev run
+send grep -c "mdev exited cleanly" /run/godel/godel.log; echo mdev-count-$(grep -c "mdev exited cleanly" /run/godel/godel.log)
+expect mdev-count-1 timeout=10
+expect godel-alpine:~# timeout=10
+
+comment the first supervisor line carries the T+ stamp format
+send head -1 /run/godel/godel.log
+expect ms] Godel timeout=10
+expect godel-alpine:~# timeout=10
+
+comment graceful poweroff with the new shutdown timing lines
+send godelctl poweroff
+expect Godel: shutting down timeout=30
+expect remount-ro took timeout=30
+expect powering off timeout=30

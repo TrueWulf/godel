@@ -6,18 +6,27 @@ generates them.
 
 ## Supported today
 
-- Distro families: Artix/Arch and Void are covered by CI fixtures. Alpine,
-  Debian/Ubuntu, Fedora, openSUSE, and Gentoo are capability-detected preview
-  targets: run `--dry-run`, inspect every reported capability, and test the
-  generated entry before relying on it. The installer never pretends a
-  desktop profile is complete when a binary is absent.
+Support is stated in three grades. Do not read up from one grade to the
+next without your own testing.
+
+- **fixture-tested**: Artix/Arch (GRUB), Void (Limine current/legacy,
+  extlinux, systemd-boot, rEFInd), and Alpine (extlinux, GRUB; musl +
+  busybox `mdev` profile). Covered by CI fixtures.
+- **QEMU-tested**: the Alpine `mdev` profile additionally boots a real
+  musl/busybox rootfs (from the Alpine repositories) with Godel as
+  init: mdev scan, gettys, clean shutdown (`make qemu-alpine`).
+- **real-machine-tested**: Artix/GRUB on the development machine. A
+  fresh machine of any supported family starts at fixture-tested.
+- Preview targets (capability-detected, run `--dry-run` and inspect
+  every reported capability): Debian/Ubuntu, Fedora, openSUSE, Gentoo.
 - Bootloaders: **GRUB**, **Limine** (current `limine.conf` and legacy
   `limine.cfg`), **extlinux/syslinux**, **systemd-boot**, and **rEFInd**.
   All backends add a test entry only: the current default remains untouched.
 - Profile: **desktop base** — fsck/rootfs remount, fstab mounts, fstab
-  swap, loopback, udev + trigger, sysctl, D-Bus, elogind,
-  NetworkManager, two gettys, log sync. Missing pieces are reported,
-  not silently dropped.
+  swap, loopback, device manager (udev + trigger, or busybox `mdev` on
+  musl userlands), sysctl, D-Bus, elogind, NetworkManager, two gettys,
+  log sync. Missing pieces are reported, not silently dropped. Getty
+  is gated on the device-manager oneshot on every profile.
 
 ## The one command
 
@@ -85,8 +94,16 @@ step it *would* take, changing nothing.
   `default_entry` untouched.
 - The generic desktop profile is capability based, not init-system based:
   udev/eudev, D-Bus, elogind, NetworkManager or dhcpcd, and agetty are used
-  only when found. Alpine's mdev and OpenRC service discovery still need a
-  dedicated profile before a real Alpine desktop is claimed supported.
+  only when found. On musl userlands (Alpine) busybox `mdev` takes the
+  device-manager role: an initial `mdev -s` scan plus hotplug-helper
+  registration when the kernel offers `/proc/sys/kernel/hotplug`
+  (CONFIG_UEVENT_HELPER). Without it, devtmpfs plus the initial scan
+  cover device nodes; the installer reports which variant the running
+  kernel provides.
+- OpenRC systems (Alpine and similar) get a runlevel discovery report:
+  `/etc/runlevels/{sysinit,boot,default}` entries are read purely as a
+  capability source, never executed. The installer lists them and names
+  every service it will not transfer, so nothing disappears silently.
 - NixOS is deliberately refused: its boot and service graph are declarative,
   not `/etc/fstab` plus mutable service configuration.
 - Cloning your *entire* current service set: daemonizers and
@@ -111,13 +128,26 @@ bypassing Godel's clean-shutdown path (services stopped, filesystems
 remounted read-only, sync). That is how dirty ext4 journals and fsck
 prompts come back.
 
-## The fixture test
+## The fixture tests
 
 CI runs `tools/test-install.sh` for the Artix/GRUB baseline and
-`tools/test-compat-install.sh` for Void fixtures covering current and legacy
-Limine, extlinux, systemd-boot, and rEFInd. They assert:
+`tools/test-compat-install.sh` for the compatibility matrix: Void
+fixtures covering current and legacy Limine, extlinux, systemd-boot,
+and rEFInd, plus Alpine fixtures (mdev instead of udev,
+`initramfs-lts` naming, OpenRC runlevel report) over extlinux and GRUB.
+They assert:
 
 - the generated service set passes `godel -t`;
 - the entry appears exactly once, even after a re-run;
 - every existing bootloader default is byte-identical before and after;
 - a re-run leaves exactly one Godel entry.
+
+## The Alpine QEMU session
+
+`doas make qemu-alpine` assembles a disposable musl + busybox rootfs
+with `tools/build-alpine.sh` (apk.static against the Alpine
+repositories; network required) and boots it in QEMU with Godel as
+init. The session verifies the mdev scan, the kernel-dependent hotplug
+helper report, gettys, the `[T+Nms]` supervisor stamps, and a clean
+timed poweroff — the Alpine profile exercised against real musl
+binaries, not a simulation.

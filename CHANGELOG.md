@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.9.4 - 2026-09-27
+
+- Alpine moves from capability preview to a tested profile for the
+  musl/busybox userland. When `udevd` is absent but busybox `mdev` is
+  present, the installer generates an `mdev` oneshot (initial `mdev -s`
+  scan plus hotplug-helper registration when
+  `/proc/sys/kernel/hotplug` exists) and gates getty on it. The
+  kernel-dependent hotplug capability is reported explicitly instead of
+  failing silently. Getty now waits for the device-manager oneshot on
+  every profile (udev-trigger or mdev).
+- OpenRC runlevel discovery: on systems with `/etc/runlevels`, the
+  installer reads boot/sysinit/default entries purely as a capability
+  source (never executed), lists them, and names every service it will
+  not transfer so capability loss is explicit.
+- Alpine initramfs naming (`/boot/initramfs-lts`, no `.img` suffix) is
+  recognised; mkinitfs and dracut presence are reported as initramfs
+  generators.
+- Alpine fixture tests (extlinux and GRUB backends over an
+  `ID=alpine` tree with mdev and runlevels) joined the compatibility
+  matrix, and `tools/build-alpine.sh` assembles a disposable musl +
+  busybox Alpine rootfs for the new `alpine-mdev` QEMU session: real
+  musl binaries boot Godel as init, mdev scans, gettys answer, and the
+  shutdown path completes cleanly (`make qemu-alpine`).
+- Measured boot and shutdown profiling: every supervisor log line now
+  carries a `[T+Nms]` monotonic stamp (PID 1 only), shutdown logs the
+  deadline, the SIGKILL phase with a hung-service count, and
+  remount-ro/sync durations. `tools/boot-report.sh` turns a supervisor
+  log into a boot/shutdown timeline report (multiple boots supported);
+  QEMU transcripts are checked against it in `tools/test-system.sh`.
+- Fixed the systemd-boot backend killing the installer under `set -e`
+  on a first install (no previous entry file to back up), and the
+  compatibility matrix now actually runs all backend tests (limine
+  current/legacy, extlinux, systemd-boot, rEFInd, alpine extlinux/grub).
+
 ## 0.9.3 - 2026-09-20
 
 - Expanded the compatibility installer from GRUB-only Artix/Arch to a

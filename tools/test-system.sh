@@ -19,6 +19,9 @@ trap 'rm -rf "$work"' EXIT
 status=0
 for session in tools/sessions/*.session; do
 	name=$(basename "$session" .session)
+	# alpine-* sessions run against .image/alpine.ext4 (musl userland),
+	# driven by the qemu-alpine target, not the busybox test image
+	case $name in alpine-*) continue ;; esac
 	echo "=== $name"
 	cp "$root/.image/disk.ext4" "$work/$name.ext4"
 	if [ "$name" = fsck ]; then
@@ -46,5 +49,14 @@ done
 
 if [ "$status" = 0 ]; then
 	echo "all system sessions passed"
+	# The basic transcript must yield a parseable boot report: this
+	# verifies the [T+Nms] supervisor stamping end-to-end in QEMU.
+	if sh tools/boot-report.sh "$logs/basic.log" | tee "$logs/basic.report" |
+			grep -q '^boot 1: .*ready='; then
+		echo "boot report parsed (see $logs/basic.report)"
+	else
+		echo "boot report FAILED on basic.log" >&2
+		status=1
+	fi
 fi
 exit $status
