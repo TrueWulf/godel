@@ -37,26 +37,24 @@ documentation stay in English.
 
 ## Open items (in priority order)
 
-1. **Bug 5 closure (in flight)**: the machine was upgraded to 0.9.4
-   binaries via `~/godel-host/apply.sh` (2026-09-27 late evening,
-   backups in `/etc/godel/backups`), then powered off with
-   `doas godelctl poweroff`. The 0.9.2→0.9.4 shutdown path is
-   logging-only (T+ stamps, deadline/SIGKILL/remount-ro/sync lines),
-   so the clean-shutdown closure is valid on 0.9.4. Next session:
-   verify the boot was clean — no ext4 recovery/fsck in the fresh
-   `dmesg.log`, no fsck prompts — then formally close the incident.
-2. **First 0.9.4 boot metrics**: run `sh tools/boot-report.sh
-   /var/log/godel/supervisor.log` — T+ stamps give kernel-relative
-   absolutes for the first time on metal (this morning's 0.9.2 boot:
-   ready 7 ms, fsck 45 ms, dbus ready 64 ms, mount-home 1313 ms,
-   udev-trigger 1346 ms, getty ~1.35 s; the two slow oneshots gate
-   getty and are the first optimization targets, within the safety
-   rules: no weakening of the getty gate, no autologin race, no
-   dropping fsync/remount-ro).
-3. **Autologin**: confirmed working on zen (2026-09-27 boot, niri
-   started 1 s after boot without input). The 0.9.4 boot is another
-   zen check; instrumentation in `~/.cache/godel-login.log` stays
-   until confirmed on lts too, then strip.
+1. **Bug 5: CLOSED (2026-09-27)**. Clean `godelctl poweroff` at 22:29,
+   boot at 22:31 on 0.9.4 binaries: fresh `dmesg.log` has no ext4
+   recovery and no fsck (the readonly-orphan-cleanup line is the
+   normal per-mount check). Data-integrity incident formally closed.
+2. **Measured boot optimization (next target)**. First metal metrics
+   from `boot-report.sh` (zen, 2026-09-27 22:31): PID 1 exec at
+   T+7.7 s (kernel side), Godel config load 26 ms, dbus ready 152 ms,
+   mount-home 2570 ms, udev-trigger 1674 ms, getty at T+10462 ms —
+   exactly gated by mount-home (7881+2570). Both slow oneshots already
+   run in parallel; getty waits on mount-home. Next steps: add step
+   timing inside the mount-home command (fsck vs mount split) to
+   /var/log/godel/mount-home.log, consider whether the per-boot fsck
+   probe can be cheaper, and evaluate a bounded udevadm-settle
+   readiness strategy — without weakening the getty gate, the
+   autologin ordering, or shutdown safety. Every change needs a test.
+3. **Autologin**: confirmed on zen for 0.9.2 and 0.9.4 boots.
+   Instrumentation in `~/.cache/godel-login.log` stays until
+   confirmed on lts too, then strip.
 4. **suspend/resume and power button**: never tested; protocol in
    earlier session notes.
 5. **Boot metrics on 0.9.4**: after the first 0.9.4 boot, run
