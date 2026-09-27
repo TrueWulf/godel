@@ -7,12 +7,14 @@ documentation stay in English.
 
 ## Current state (2026-09-27)
 
-- **0.9.4 is ready** (committed on main; tag/push when the owner
-  confirms, see open item 1): measured boot/shutdown profiling plus the
-  Alpine mdev profile. No PID 1 behavioral ordering changed; the
-  supervisor log format gained a `[T+Nms]` monotonic prefix (PID 1
-  only), shutdown now logs deadline, SIGKILL phase with hung count,
-  and remount-ro/sync durations. `tools/boot-report.sh` turns
+- **0.9.4 is released**: tag `v0.9.4` on `da7a2d9`, main and tag pushed
+  to Codeberg (origin) and GitHub after divergence check. Machine
+  upgraded to 0.9.4 binaries and powered off cleanly the same evening.
+- **0.9.4 contents**: measured boot/shutdown profiling plus the Alpine
+  mdev profile. No PID 1 behavioral ordering changed; the supervisor
+  log format gained a `[T+Nms]` monotonic prefix (PID 1 only),
+  shutdown now logs deadline, SIGKILL phase with hung count, and
+  remount-ro/sync durations. `tools/boot-report.sh` turns
   supervisor logs into timeline reports (busybox-awk verified via the
   Alpine chroot).
 - **Alpine grade moved up**: mdev profile (initial scan +
@@ -28,24 +30,33 @@ documentation stay in English.
   caught a real `set -e` bug in the systemd-boot backend's bl_backup),
   test-boot-report, sh -n across all scripts, 18 busybox QEMU sessions
   + the new alpine-mdev session, `git diff --check`.
-- Machine still runs **0.9.2 binaries** (deliberate: bug 5 must close
-  on them first). Upgrade path after that: `~/godel-host/apply.sh`.
+- The machine now runs **0.9.4 binaries** (upgraded via
+  `~/godel-host/apply.sh` on 2026-09-27).
 - dl-cdn (Fastly) occasionally throws transient fetch errors at
   apk.static; build-alpine.sh retries five times.
 
 ## Open items (in priority order)
 
-1. **Bug 5 closure (still critical)**: the evening `doas godelctl
-   poweroff` has not happened yet. Next boot must be clean with no
-   fsck; check fresh `/var/log/godel` + dmesg for ext4 recovery. This
-   formally closes the 0.9.2 data-integrity incident.
-2. **Tag + push 0.9.4** after item 1 is confirmed: `git tag v0.9.4`,
-   push main + tag to Codeberg (origin) and GitHub; check divergence
-   first, force-with-lease only with a verified reason.
+1. **Bug 5 closure (in flight)**: the machine was upgraded to 0.9.4
+   binaries via `~/godel-host/apply.sh` (2026-09-27 late evening,
+   backups in `/etc/godel/backups`), then powered off with
+   `doas godelctl poweroff`. The 0.9.2→0.9.4 shutdown path is
+   logging-only (T+ stamps, deadline/SIGKILL/remount-ro/sync lines),
+   so the clean-shutdown closure is valid on 0.9.4. Next session:
+   verify the boot was clean — no ext4 recovery/fsck in the fresh
+   `dmesg.log`, no fsck prompts — then formally close the incident.
+2. **First 0.9.4 boot metrics**: run `sh tools/boot-report.sh
+   /var/log/godel/supervisor.log` — T+ stamps give kernel-relative
+   absolutes for the first time on metal (this morning's 0.9.2 boot:
+   ready 7 ms, fsck 45 ms, dbus ready 64 ms, mount-home 1313 ms,
+   udev-trigger 1346 ms, getty ~1.35 s; the two slow oneshots gate
+   getty and are the first optimization targets, within the safety
+   rules: no weakening of the getty gate, no autologin race, no
+   dropping fsync/remount-ro).
 3. **Autologin**: confirmed working on zen (2026-09-27 boot, niri
-   started 1 s after boot without input). Instrumentation in
-   `~/.cache/godel-login.log` stays until confirmed on lts too, then
-   strip.
+   started 1 s after boot without input). The 0.9.4 boot is another
+   zen check; instrumentation in `~/.cache/godel-login.log` stays
+   until confirmed on lts too, then strip.
 4. **suspend/resume and power button**: never tested; protocol in
    earlier session notes.
 5. **Boot metrics on 0.9.4**: after the first 0.9.4 boot, run
