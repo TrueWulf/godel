@@ -80,6 +80,47 @@ documentation stay in English.
    shape (no mini-systemd drift).
 10. **vpn-cli**: the user's own console client for happd.
 
+## Plan for 0.9.5 (scope decided 2026-09-27, work next session)
+
+Theme: reduce the shell share and trim code — the last release before
+the feature freeze. Ground truth: Hare 3758 lines; shell splits into
+~1006 lines of shipped logic (install.sh + bootloader backends +
+boot-report.sh) and ~943 lines of host tooling (test/build scripts,
+never shipped). Policy statement to add to README: host tooling stays
+POSIX shell on purpose; shipped logic migrates to Hare.
+
+1. **`godelctl boot-report`** (Hare port of tools/boot-report.sh,
+   ~170 lines): parsing only, unit-tested, `doas godelctl boot-report`
+   (the log is root-owned). The shell version is deleted once the
+   test harness checks the Hare one; test-system.sh keeps verifying
+   QEMU transcripts through the new subcommand.
+2. **Installer logic → Hare** (`cmd/godel-install`): distro detect,
+   capability detection, service-set generation, staging, validation —
+   ~480 lines of install.sh move. The five bootloader backends stay
+   POSIX shell plugins behind the existing bl_* contract (per-bootloader
+   text munging; adding a bootloader must remain a ~60-line file).
+   The 8-fixture compatibility matrix is the migration safety net;
+   `sh tools/install.sh` remains the entry point, now exec'ing the
+   Hare core.
+3. **Measured boot optimization** (from the 2026-09-27 metal metrics):
+   split timing inside mount-home (fsck vs mount) written to its
+   service log; evaluate a bounded udevadm-settle readiness strategy
+   against the measured 1674 ms. Constraints unchanged: getty gate,
+   autologin ordering, shutdown fsync/remount-ro stay untouched; every
+   change ships with a session or unit test; boot-report before/after
+   numbers go into the release notes.
+4. **Code trim on the PID 1 core**: dead code audit across cmd/godel +
+   godel/, fixed buffers and no-alloc-after-boot invariants re-checked,
+   test count must not drop below 71. Small doc pass (man pages,
+   architecture.md) to match reality.
+5. **Soak items riding along**: autologin on lts (one controlled boot,
+   then strip ~/.cache/godel-login.log), suspend/resume + power button,
+   Void+Limine friend dry-run (`--bootloader limine --dry-run` first).
+
+Non-goals for 0.9.5: new subsystems, new bootloader backends, Alpine on
+real hardware (QEMU matrix remains the claim boundary), mini-systemd
+drift. After 0.9.5: feature freeze.
+
 ## Roadmap to 1.0.0
 
 Stage 4 soak (weeks of daily driving), every deviation recorded.
