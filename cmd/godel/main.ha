@@ -971,12 +971,87 @@ fn remount_ro_all(root_last: bool) void = {
 	};
 };
 
+// Session managers (elogind scopes, for example) move user processes
+// out of the supervisor's cgroup tree. At shutdown such strays keep
+// writable mmaps alive on disk filesystems, which makes remount-ro
+// fail with EBUSY and leaves ext4 journals dirty until the next boot.
+// An init must not hand dirty disks to the power switch: every
+// userland process except PID 1 is killed once all supervised
+// services are already gone. Kernel threads and already-reaped
+// zombies are recognized by their empty /proc/PID/cmdline and left
+// alone. Raw getdents64 over a fixed buffer: no allocation on the
+// shutdown path.
+let strays_killed: i64 = 0;
+
+fn proc_has_cmdline(name: []u8) bool = {
+	let path: [32]u8 = [0...];
+	if (len(name) + 9 >= len(path)) return false;
+	path[0..5] = ['/','p','r','o','c'];
+	path[5] = '/';
+	path[6..6 + len(name)] = name;
+	const n = 6 + len(name);
+	path[n..n + 8] = ['/','c','m','d','l','i','n','e'];
+	const fd = match (rt::open(path[..n + 8], rt::O_RDONLY | rt::O_CLOEXEC, 0)) {
+	case let fd: int => yield fd;
+	case => return false;
+	};
+	defer godel::close_fd(fd);
+	let probe: [1]u8 = [0];
+	return match (rt::read(fd, &probe[0]: *opaque, 1)) {
+	case let k: size => yield k > 0;
+	case => yield false;
+	};
+};
+
+fn kill_strays() void = {
+	const fd = match (rt::open("/proc", rt::O_RDONLY | rt::O_DIRECTORY | rt::O_CLOEXEC, 0)) {
+	case let fd: int => yield fd;
+	case => return;
+	};
+	defer godel::close_fd(fd);
+	let buf: [4096]u8 = [0...];
+	for (true) {
+		const n = match (rt::getdents64(fd, &buf[0]: *opaque, len(buf))) {
+		case let n: size =>
+			if (n == 0) break;
+			yield n;
+		case => break;
+		};
+		let off: size = 0;
+		for (off + 19 <= n) {
+			const d = &buf[off]: *rt::dirent64;
+			if (d.d_reclen == 0) break;
+			const name = &d.d_name[0]: *[*]u8;
+			let pid: i64 = 0;
+			let digits = 0z;
+			for (let i = 0z; i < 12 && name[i] >= '0' && name[i] <= '9'; i += 1) {
+				pid = pid * 10 + (name[i] - '0'): i64;
+				digits += 1;
+			};
+			const dname = name[..digits + 1];
+			if (digits > 0 && dname[digits] == 0 && pid > 1
+					&& proc_has_cmdline(dname[..digits])) {
+				let _ = rt::kill(pid: int, rt::SIGKILL);
+				strays_killed += 1;
+			};
+			off += d.d_reclen: size;
+		};
+	};
+	// SIGKILL teardown (mmap release included) is asynchronous; give
+	// the exits a fixed moment to complete before remounting.
+	const nap = rt::timespec { tv_sec = 0, tv_nsec = 150_000_000 };
+	let _ = rt::nanosleep(&nap, null);
+};
+
 fn finish_shutdown() never = {
 	for (let i = 0z; i < godel::MAX_SERVICES; i += 1) {
 		if (svcs[i].pid > 0) {
 			let _ = godel::wait_pid_nohang(svcs[i].pid);
 		};
 	};
+	strays_killed = 0;
+	kill_strays();
+	logf("godel: final sweep: {} stray process(es) killed\n", strays_killed);
 	logf("Godel: remounting filesystems read-only\n");
 	const ro_started = godel::now_ms();
 	// Disk filesystems first (each result logged), then sync, then the
