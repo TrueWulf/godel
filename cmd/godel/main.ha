@@ -176,6 +176,8 @@ fn write_status() void = {
 	};
 };
 
+fn nm_path(a: []u8) str = strings::fromutf8_unsafe(a);
+
 fn nm(a: []u8) str = strings::fromutf8_unsafe(a);
 
 fn mkcs(buf: []u8, s: str) *const u8 = {
@@ -858,7 +860,7 @@ fn remount_ro_candidate(fstype: []u8) bool = {
 	return false;
 };
 
-fn remount_ro_line(line: []u8) void = {
+fn remount_ro_line(line: []u8, root_last: bool) void = {
 	let f1 = 0z;
 	for (f1 < len(line) && line[f1] != ' ') f1 += 1;
 	if (f1 == len(line)) return;
@@ -870,6 +872,9 @@ fn remount_ro_line(line: []u8) void = {
 	const mnt = line[f1 + 1..f2];
 	const fstype = line[f2 + 1..t2];
 	if (!remount_ro_candidate(fstype)) return;
+	// The root mount goes last: the summary append below still needs a
+	// writable root filesystem.
+	if (root_last && len(mnt) == 1 && mnt[0] == '/') return;
 	for (let i = 0z; i < len(mnt); i += 1) {
 		if (mnt[i] == '\\') return;
 	};
@@ -878,12 +883,66 @@ fn remount_ro_line(line: []u8) void = {
 	path[..len(mnt)] = mnt;
 	match (rt::mount("", path[..len(mnt)], &EMPTY_CS[0]: *const u8,
 			MS_REMOUNT | MS_RDONLY, null)) {
-	case void => void;
-	case => void;
+	case void =>
+		logf("godel: remount-ro ok: {}\n", nm_path(mnt));
+	case let e: rt::errno =>
+		logf("godel: remount-ro FAILED on {} (errno {})\n",
+			nm_path(mnt), e: i64);
 	};
 };
 
-fn remount_ro_all() void = {
+fn remount_root_ro() void = {
+	match (rt::mount("", "/", &EMPTY_CS[0]: *const u8,
+			MS_REMOUNT | MS_RDONLY, null)) {
+	case void => logf("godel: remount-ro ok: /\n");
+	case let e: rt::errno =>
+		logf("godel: remount-ro FAILED on / (errno {})\n", e: i64);
+	};
+};
+
+// Shutdown evidence used to die with /run; the last supervisor log is
+// the only record of which service delayed SIGTERM or why a remount
+// failed. Copy what exists into a persistent file while the root fs
+// is still writable.
+fn copy_into(dst_fd: int, path: str) void = {
+	const fd = match (rt::open(path, rt::O_RDONLY | rt::O_CLOEXEC, 0)) {
+	case let fd: int => yield fd;
+	case => return;
+	};
+	defer godel::close_fd(fd);
+	let buf: [8192]u8 = [0...];
+	for (true) {
+		const n = match (rt::read(fd, &buf[0]: *opaque, len(buf))) {
+		case let n: size =>
+			if (n == 0) break;
+			yield n;
+		case => break;
+		};
+		let off = 0z;
+		for (off < n) {
+			match (rt::write(dst_fd, &buf[off]: *opaque, n - off)) {
+			case let k: size => off += k;
+			case => return;
+			};
+		};
+	};
+};
+
+fn persist_shutdown_log() void = {
+	const fd = match (rt::open("/var/log/godel/shutdown.log",
+			rt::O_WRONLY | rt::O_CREATE | rt::O_TRUNC | rt::O_CLOEXEC,
+			0o600)) {
+	case let fd: int => yield fd;
+	case =>
+		logf("godel: cannot persist shutdown evidence\n");
+		return;
+	};
+	defer godel::close_fd(fd);
+	copy_into(fd, "/run/godel/godel.log.1");
+	copy_into(fd, "/run/godel/godel.log");
+};
+
+fn remount_ro_all(root_last: bool) void = {
 	const fd = match (rt::open("/proc/mounts", rt::O_RDONLY | rt::O_CLOEXEC, 0)) {
 	case let fd: int => yield fd;
 	case => return;
@@ -899,11 +958,15 @@ fn remount_ro_all() void = {
 		};
 	};
 	godel::close_fd(fd);
+	if (used == len(buf)) {
+		logf("godel: remount-ro: /proc/mounts truncated at {} bytes; some mounts may be missed\n",
+			used: i64);
+	};
 	let pos: size = 0;
 	for (pos < used) {
 		let end = pos;
 		for (end < used && buf[end] != '\n') end += 1;
-		if (end > pos) remount_ro_line(buf[pos..end]);
+		if (end > pos) remount_ro_line(buf[pos..end], true);
 		pos = end + 1;
 	};
 };
@@ -916,11 +979,16 @@ fn finish_shutdown() never = {
 	};
 	logf("Godel: remounting filesystems read-only\n");
 	const ro_started = godel::now_ms();
-	remount_ro_all();
+	// Disk filesystems first (each result logged), then sync, then the
+	// summary is appended to persistent shutdown evidence while root is
+	// still writable, and only then root itself goes read-only.
+	remount_ro_all(true);
 	const sync_started = godel::now_ms();
 	rt::sync();
 	logf("godel: remount-ro took {} ms; sync took {} ms\n",
 		sync_started - ro_started, godel::now_ms() - sync_started);
+	persist_shutdown_log();
+	remount_root_ro();
 	logf("Godel: {} now\n",
 		if (shutdown.mode == shutdown_action::reboot) "rebooting"
 		else "powering off");
