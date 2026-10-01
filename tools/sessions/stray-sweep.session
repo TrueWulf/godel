@@ -1,0 +1,31 @@
+expect login: timeout=90
+send root
+expect Password:
+send godel
+expect godel#
+
+comment Session managers (elogind scopes) move user processes out of
+comment the supervisor tree. Simulate one properly: a detached
+comment setsid process with stdio away from the tty, parked in a
+comment top-level cgroup Godel does not supervise. The inner shell
+comment registers its own pid because busybox setsid forks. cgroupfs
+comment seq_files hang when read back while a member lives, so the
+comment check goes through ps, not through cgroup.procs.
+send mkdir /sys/fs/cgroup/stray && echo cg-ok
+expect godel# timeout=10
+send setsid sh -c "echo $$ > /sys/fs/cgroup/stray/cgroup.procs; exec sleep 10000" </dev/null >/dev/null 2>&1 &
+expect godel# timeout=10
+send sleep 2
+expect godel# timeout=15
+send ps | grep -c "sleep 10000"
+expect 1 timeout=10
+expect godel# timeout=10
+
+comment Poweroff must sweep the stray before disks go read-only: an
+comment unsupervised live process would keep writable mmaps alive and
+comment force ext4 journal recovery on the next boot.
+send godelctl poweroff
+expect final sweep timeout=30
+expect stray process(es) killed timeout=30
+expect remount-ro ok timeout=30
+expect powering off timeout=30
