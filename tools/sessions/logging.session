@@ -7,10 +7,11 @@ expect godel#
 comment boot services that start before the remount log under /run
 send cat /run/godel/logs/beacon.log
 expect beacon: alive timeout=10
-comment mount oneshots wait for the remount, so they log under /var
-send ls /var/log/godel
-expect mount-home.log timeout=10
-expect mount-var.log timeout=10
+comment mount oneshots wait for the remount, so they log under /var;
+comment check files individually: ls column layout is not deterministic
+send for f in mount-home mount-var; do test -f /var/log/godel/$f.log && echo present-$f; done
+expect present-mount-home timeout=10
+expect present-mount-var timeout=10
 send cat /var/log/godel/mount-home.log
 expect log opened timeout=10
 expect no /home device timeout=10
