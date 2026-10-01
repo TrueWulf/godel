@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.9.5 - 2026-10-02
+
+- Fixed the last dirty-shutdown path: session managers (elogind scopes)
+  move user processes out of the supervisor's cgroup tree, so a graceful
+  shutdown left live browser/daemon processes holding writable mmaps.
+  Their remount-ro failed with EBUSY, ext4 `needs_recovery` survived,
+  and every boot paid ~2.5 s of journal replay. PID 1 now runs a final
+  stray-process sweep (SIGKILL to every userland process except PID 1;
+  kernel threads and zombies are skipped by their empty cmdline) before
+  disks go read-only. Covered by the new `stray-sweep` QEMU session.
+- Shutdown forensics: the supervisor-log tail is persisted to
+  `/var/log/godel/shutdown.log` before root goes read-only, every
+  remount-ro outcome is logged per mount (errno on failure),
+  `/proc/mounts` truncation is reported, and root is remounted last so
+  the evidence append lands on a writable filesystem.
+- Boot profiling on real hardware (`tools/boot-report.sh` over the
+  0.9.4 `[T+Nms]` stamps) identified mount-home (~2.5 s journal replay
+  on /home) and udev-trigger settle (~1.7 s) as the remaining getty
+  gates; the stray sweep above removes the root cause instead of
+  shortening the gate.
+
 ## 0.9.4 - 2026-09-27
 
 - Alpine moves from capability preview to a tested profile for the
