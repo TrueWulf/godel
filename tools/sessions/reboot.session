@@ -26,5 +26,5 @@ expect marker-before-reboot timeout=10
 comment graceful poweroff
 send godelctl poweroff
 expect Godel: shutting down timeout=30
-expect remount-ro took timeout=30
+expect down in timeout=30
 expect powering off timeout=30

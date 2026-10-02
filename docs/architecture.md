@@ -9,7 +9,10 @@ features each path relies on.
 - One `epoll(7)` event loop multiplexes a signalfd, a timerfd, and one
   pidfd per service. Signal delivery is fully synchronous: SIGTERM,
   SIGINT, SIGUSR1, SIGHUP, and SIGCHLD arrive through the signalfd.
-- Services are forked children. Every child calls `setsid()`, so each
+- Services are forked children. The supervisor runs with the
+  supervisor-relevant signals blocked (they arrive via signalfd); every
+  child resets its signal mask before `execve`, so services receive
+  SIGTERM normally. Every child calls `setsid()`, so each
   service is a process group and `kill(-pgid)` reaches the whole tree.
   `agetty`/`getty` then acquire the controlling terminal with
   `TIOCSCTTY`, which is what makes serial login work.
@@ -31,12 +34,16 @@ features each path relies on.
 
 ## Shutdown sequence
 
-1. SIGTERM to every running service's process group (the graceful
-   phase). Each service's `shutdown_timeout` sets the deadline, capped
-   at 30 seconds.
-2. On deadline: SIGKILL to every remaining process group plus
-   `cgroup.kill` per service to catch orphans that escaped their parent.
-3. One second later: reap, sync, `reboot(RB_POWER_OFF|RB_RESTART)`.
+1. SIGTERM to every running service's process group. Each service's
+   own `shutdown_timeout` (capped at 30 seconds) is its personal
+   deadline: services that exit early do not wait for slower ones, and
+   the machine powers off the moment the last service is gone.
+2. A service that outlives its deadline gets SIGKILL to its process
+   group plus `cgroup.kill` for orphans that escaped their parent.
+3. If a process survives even SIGKILL (uninterruptible disk sleep),
+   shutdown proceeds anyway after one grace interval: reap, remount-ro,
+   sync, `reboot(RB_POWER_OFF|RB_RESTART)`; any remount failure is
+   logged before root goes read-only.
 
 Ctrl-Alt-Del is enabled via `reboot(RB_ENABLE_CAD)`; the kernel turns a
 console CAD into SIGINT, which follows the poweroff path.
@@ -53,10 +60,24 @@ sources or within one — is a diagnostic that refuses the whole
 configuration. A comment-only or multi-service directory file is
 rejected with the file name and line in the message.
 
-The snapshot is fixed storage: at most 64 services, 8 argv entries,
-4 `env` entries, and 4 `after` references per service, all pointing
-into a 32 KiB buffer. Parsing mutates the buffer in place
-(NUL-terminating words) and never allocates.
+The snapshot storage is reserved once per generation, sized to the
+actual service count before parsing begins (section headers are counted
+first, then the buffer and service table are allocated to fit; there is
+no fixed service ceiling — capacity scales with the configuration at
+boot, up to the 256 KiB configuration text budget). Per-service limits
+stay fixed: 8 argv entries, 4 `env` entries, and 4 `after` references
+per service. Parsing mutates the buffer in place (NUL-terminating words);
+the only allocations happen in config-load paths, never in the event
+loop. The PID 1 runtime tables (per-service runtime, dying slots,
+readiness pipes, orphan ring, status buffer, start-order scratch) are
+allocated alongside the snapshot and are plain fixed pointers afterwards.
+
+The event loop identifies event sources through `epoll_data` tags:
+a service pidfd carries the plain service index, while special sources
+(signalfd, timerfd, rescue pidfd, control pipe) and the dying-slot and
+readiness-pipe classes carry tags at isolated high bit positions
+(1<<40 and above). The index space is therefore never capped by the
+tag layout — any 32-bit service count stays distinguishable.
 
 `godel -t PATH` validates a file, a config root, or a `services.d`
 directory without starting anything: it prints `path:line: message`

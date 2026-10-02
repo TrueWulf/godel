@@ -1,16 +1,15 @@
 use bytes;
 use strings;
 
-export def MAX_SERVICES: size = 64;
 export def MAX_ARGS: size = 8;
 export def MAX_ENV: size = 4;
 export def MAX_AFTER: size = 4;
 export def MAX_NAME_LEN: size = 31;
-export def BUF_CAPACITY: size = 32 * 1024;
+export def BUF_CAPACITY: size = 256 * 1024;
 export def MAX_WARNINGS: size = 4;
-export def MAX_FILES: size = 68;
+export def MAX_FILES: size = 256;
 export def MAX_RUNAS_LEN: size = 63;
-export def NO_INDEX: u8 = 0xff;
+export def NO_INDEX: u16 = 0xffff;
 
 export type restart = enum u8 { always, on_failure, none };
 export type service_kind = enum u8 { long_running, oneshot };
@@ -29,7 +28,7 @@ export type service = struct {
 	envc: u8,
 	after_names: [MAX_AFTER][MAX_NAME_LEN + 1]u8,
 	after_lens: [MAX_AFTER]u8,
-	after: [MAX_AFTER]u8,
+	after: [MAX_AFTER]u16,
 	after_len: u8,
 	runas_off: u16,
 	runas_len: u8,
@@ -49,12 +48,64 @@ export type diag = struct { file: u8, line: size, msg: str };
 export type warning = struct { file: u8, line: size, msg: str };
 
 export type set = struct {
-	buf: [BUF_CAPACITY]u8,
+	buf: []u8,
 	used: size,
-	services: [MAX_SERVICES]service,
+	services: []service,
 	count: size,
 	warnings: [MAX_WARNINGS]warning,
 	warning_count: size,
+};
+
+export fn reserve_set(s: *set, cap: size) void = {
+	if (len(s.buf) == 0) {
+		s.buf = must_alloc(BUF_CAPACITY);
+	};
+	if (len(s.services) >= cap) return;
+	const grown_src = alloc([new_service()...], cap);
+	const grown = match (grown_src) {
+	case let g: []service => yield g;
+	case => abort("godel: out of memory at configuration load");
+	};
+	for (let i = 0z; i < len(s.services); i += 1) {
+		grown[i] = s.services[i];
+	};
+	if (len(s.services) > 0) {
+		free(s.services);
+	};
+	s.services = grown;
+};
+
+fn must_alloc(sz: size) []u8 = match (alloc([0u8...], sz)) {
+case let b: []u8 => yield b;
+case => abort("godel: out of memory at configuration load");
+};
+
+export fn count_service_headers(source: []u8) size = {
+	const head = strings::toutf8("[service");
+	let n: size = 0;
+	let line_start = true;
+	let i: size = 0;
+	for (i < len(source)) {
+		const c = source[i];
+		if (c == '\n') {
+			line_start = true;
+			i += 1;
+			continue;
+		};
+		if (line_start) {
+			if (c == ' ' || c == '\t' || c == '\r') {
+				i += 1;
+				continue;
+			};
+			if (i + len(head) <= len(source)
+					&& bytes::equal(source[i..i + len(head)], head)) {
+				n += 1;
+			};
+			line_start = false;
+		};
+		i += 1;
+	};
+	return n;
 };
 
 export fn new_service() service = service {
@@ -142,7 +193,7 @@ fn push_service(s: *set, svc: *service) (void | diag) = {
 			msg = "service has no command",
 		};
 	};
-	if (s.count == MAX_SERVICES) {
+	if (s.count == len(s.services)) {
 		return diag {
 			file = svc.file,
 			line = svc.line,
@@ -291,6 +342,7 @@ export fn finish_set(s: *set) (void | diag) = {
 
 export fn parse(s: *set, source: []u8) (void | diag) = {
 	reset_set(s);
+	reserve_set(s, count_service_headers(source));
 	match (parse_file(s, source, 0)) {
 	case void => void;
 	case let d: diag => return d;
@@ -686,10 +738,12 @@ fn resolve_after(s: *set) (void | diag) = {
 				};
 			case let f: size => yield f;
 			};
-			svc.after[slot] = found: u8;
+			svc.after[slot] = found: u16;
 		};
 	};
-	match (find_cycle(s.services[..s.count])) {
+	const color = alloc([0u8...], s.count) as []u8;
+	defer free(color);
+	match (find_cycle(s.services[..s.count], color)) {
 	case void => void;
 	case let at: (u8, size) =>
 		return diag {
@@ -700,24 +754,29 @@ fn resolve_after(s: *set) (void | diag) = {
 	};
 };
 
-export fn start_order(s: *const set, order: *[MAX_SERVICES]size) size = {
-	let launched: [MAX_SERVICES]bool = [false...];
+fn ordered(order: []size, idx: size) bool = {
+	for (let i = 0z; i < len(order); i += 1) {
+		if (order[i] == idx) return true;
+	};
+	return false;
+};
+
+export fn start_order(s: *const set, order: []size) size = {
 	let total: size = 0;
 	for (total < s.count) {
 		let progress = false;
 		for (let i = 0z; i < s.count; i += 1) {
-			if (launched[i]) continue;
+			if (ordered(order[..total], i)) continue;
 			let ready = true;
 			const svc = &s.services[i];
 			for (let slot = 0z; slot < svc.after_len: size; slot += 1) {
-				if (!launched[svc.after[slot]]) {
+				if (!ordered(order[..total], svc.after[slot]: size)) {
 					ready = false;
 					break;
 				};
 			};
 			if (ready) {
 				order[total] = i;
-				launched[i] = true;
 				total += 1;
 				progress = true;
 			};
@@ -757,34 +816,33 @@ export fn readiness_due(cfg: *const service, r: *const runtime, now: i64) bool =
 export fn ready_starts(
 	s: *const set,
 	rts: []const runtime,
-	order: *[MAX_SERVICES]size,
+	order: []size,
 ) size = {
-	let eligible: [MAX_SERVICES]bool = [false...];
 	let total: size = 0;
 	for (total < s.count) {
 		let progress = false;
 		for (let i = 0z; i < s.count; i += 1) {
-			if (eligible[i]) continue;
+			if (ordered(order[..total], i)) continue;
 			let ok = true;
 			const svc = &s.services[i];
 			for (let slot = 0z; slot < svc.after_len: size; slot += 1) {
 				const dep = svc.after[slot];
 				if (dep == NO_INDEX) continue;
-				if (!eligible[dep]) {
+				const d = dep: size;
+				if (!ordered(order[..total], d)) {
 					ok = false;
 					break;
 				};
-				const dc = &s.services[dep];
+				const dc = &s.services[d];
 				if ((dc.notification_fd != 0
 						|| dc.kind == service_kind::oneshot)
-						&& !dep_satisfied(dc, &rts[dep])) {
+						&& !dep_satisfied(dc, &rts[d])) {
 					ok = false;
 					break;
 				};
 			};
 			if (ok) {
 				order[total] = i;
-				eligible[i] = true;
 				total += 1;
 				progress = true;
 			};
@@ -897,18 +955,18 @@ fn parse_u32(text: []u8) (u32 | void) = {
 	return acc: u32;
 };
 
-fn find_cycle(services: []service) (void | (u8, size)) = {
-	let color: [MAX_SERVICES]u8 = [0...];
+fn find_cycle(services: []service, color: []u8) (void | (u8, size)) = {
 	for (let i = 0z; i < len(services); i += 1) {
 		if (color[i] == 0) {
-			match (visit(services, &color, i: u8)) {
+			match (visit(services, color, i: u16)) {
 			case void => void;
 			case let at: (u8, size) => return at;
-			};		};
+			};
+		};
 	};
 };
 
-fn visit(services: []service, color: *[MAX_SERVICES]u8, index: u8) (void | (u8, size)) = {
+fn visit(services: []service, color: []u8, index: u16) (void | (u8, size)) = {
 	color[index] = 1;
 	const svc = &services[index];
 	for (let slot = 0z; slot < svc.after_len: size; slot += 1) {

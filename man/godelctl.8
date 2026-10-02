@@ -12,6 +12,10 @@ godelctl \- control a running Godel supervisor
 |
 .B uptime
 |
+.B boot-report
+[
+.IR LOG ]
+|
 .BI start " SERVICE"
 |
 .BI stop " SERVICE"
@@ -52,6 +56,14 @@ Alias for
 .B uptime
 Print supervisor uptime (from PID 1), service totals, summed restarts, and
 the number of services whose readiness timed out.
+.TP
+.BI boot-report " [LOG]"
+Print boot and shutdown timings extracted from a supervisor log (default
+.IR /var/log/godel/supervisor.log ).
+Every line must carry the supervisor's
+.B [T+Nms]
+stamp; one report block is printed per boot, and logs without stamps
+(pre-0.9.4) are refused with exit 1.
 .TP
 .BI start " SERVICE"
 Start a stopped service via the control FIFO.

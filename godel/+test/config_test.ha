@@ -168,8 +168,9 @@ command = /bin/true
 after = a
 ";
 	parse_ok(&s, src);
-	let order: [MAX_SERVICES]size = [0...];
-	const n = start_order(&s, &order);
+	assert(s.count == 3);
+	let order: [8]size = [0...];
+	const n = start_order(&s, order[..s.count]);
 	assert(n == 3);
 	assert(order[0] == 1);
 	assert(order[1] == 2);
@@ -361,6 +362,7 @@ after = a
 @test fn parse_file_merges_sources_and_resolves_cross_file_after() void = {
 	let s = set { ... };
 	reset_set(&s);
+	reserve_set(&s, 2);
 	file_ok(&s, "[service \"base\"]\ncommand = /bin/true\n", 0);
 	file_ok(&s, "[service \"extra\"]\ncommand = /bin/true\nafter = base\n", 1);
 	assert(finish_set(&s) is void);
@@ -388,6 +390,7 @@ fn fmtstr2(a: str, b: i64, c: str, e: i64, f: str, g: str) str = {
 @test fn duplicate_across_sources_is_diagnostic_in_second_file() void = {
 	let s = set { ... };
 	reset_set(&s);
+	reserve_set(&s, 2);
 	match (parse_file(&s, strings::toutf8("[service \"a\"]\ncommand = /bin/true\n"), 0)) {
 	case void => void;
 	case => abort("first file should parse");
@@ -401,6 +404,7 @@ fn fmtstr2(a: str, b: i64, c: str, e: i64, f: str, g: str) str = {
 @test fn second_file_diags_carry_the_second_file_id() void = {
 	let s = set { ... };
 	reset_set(&s);
+	reserve_set(&s, 2);
 	match (parse_file(&s, strings::toutf8("[service \"a\"]\ncommand = /bin/true\n"), 0)) {
 	case void => void;
 	case => abort("first file should parse");
@@ -411,33 +415,101 @@ fn fmtstr2(a: str, b: i64, c: str, e: i64, f: str, g: str) str = {
 	assert(d.msg == "service has no command");
 };
 
-@test fn sixty_four_services_fit_and_sixty_five_do_not() void = {
-	let s = set { ... };
-	reset_set(&s);
-	let src: [48]u8 = [0...];
-	for (let i = 0z; i < 64; i += 1) {
-		let n = strings::toutf8("[service \"s");
-		src[..len(n)] = n;
-		let k = len(n);
-		if (i >= 10) {
-			src[k] = '0' + (i / 10): u8;
-			k += 1;
-		};
-		src[k] = '0' + (i % 10): u8;
+fn numbered_service_chunk(buf: []u8, i: size) []u8 = {
+	const head = strings::toutf8("[service \"s");
+	buf[..len(head)] = head;
+	let k = len(head);
+	let digits: [8]u8 = [0...];
+	let dn = 0z;
+	let v = i;
+	for (v >= 10) {
+		digits[dn] = '0' + (v % 10): u8;
+		dn += 1;
+		v /= 10;
+	};
+	digits[dn] = '0' + v: u8;
+	dn += 1;
+	for (let d = dn; d > 0; d -= 1) {
+		buf[k] = digits[d - 1];
 		k += 1;
-		n = strings::toutf8("\"]\ncommand = /bin/true\n");
-		src[k..k + len(n)] = n;
-		k += len(n);
-		match (parse_file(&s, src[..k], 0)) {
+	};
+	const tail = strings::toutf8("\"]\ncommand = /bin/true\n");
+	buf[k..k + len(tail)] = tail;
+	k += len(tail);
+	return buf[..k];
+};
+
+fn parse_numbered_services(s: *set, count: size) void = {
+	reset_set(s);
+	reserve_set(s, count);
+	let src: [48]u8 = [0...];
+	for (let i = 0z; i < count; i += 1) {
+		match (parse_file(s, numbered_service_chunk(src, i), 0)) {
 		case void => void;
 		case let d: diag =>
 			abort(fmtstr2("diag ", i: i64,
 				" line ", d.line: i64, ": ", d.msg));
 		};
 	};
+};
+
+@test fn sixty_four_services_fit() void = {
+	let s = set { ... };
+	parse_numbered_services(&s, 64);
 	assert(s.count == 64);
-	let n = strings::toutf8("[service \"s64\"]\ncommand = /bin/true\n");
-	src[..len(n)] = n;
-	const d = parse_file(&s, src[..len(n)], 0) as diag;
+};
+
+@test fn one_hundred_twenty_eight_services_fit() void = {
+	let s = set { ... };
+	parse_numbered_services(&s, 128);
+	assert(s.count == 128);
+	let order: [128]size = [0...];
+	assert(start_order(&s, order) == 128);
+	let seen: [128]bool = [false...];
+	for (let i = 0z; i < 128; i += 1) {
+		assert(!seen[order[i]]);
+		seen[order[i]] = true;
+	};
+};
+
+@test fn two_hundred_fifty_six_services_fit() void = {
+	let s = set { ... };
+	parse_numbered_services(&s, 256);
+	assert(s.count == 256);
+	let order: [256]size = [0...];
+	assert(start_order(&s, order) == 256);
+	let seen: [256]bool = [false...];
+	for (let i = 0z; i < 256; i += 1) {
+		assert(!seen[order[i]]);
+		seen[order[i]] = true;
+	};
+};
+
+@test fn parse_reserves_storage_for_whole_source_itself() void = {
+	let s = set { ... };
+	parse_ok(&s,
+		"[service \"a\"]\ncommand = /bin/true\n[service \"b\"]\ncommand = /bin/true\n[service \"c\"]\ncommand = /bin/true\n[service \"d\"]\ncommand = /bin/true\n");
+	assert(s.count == 4);
+};
+
+@test fn services_beyond_reserved_capacity_are_rejected() void = {
+	let s = set { ... };
+	reset_set(&s);
+	reserve_set(&s, 1);
+	const first = strings::toutf8("[service \"a\"]\ncommand = /bin/true\n");
+	const second = strings::toutf8("[service \"b\"]\ncommand = /bin/true\n");
+	assert(parse_file(&s, first, 0) is void);
+	const d = parse_file(&s, second, 0) as diag;
 	assert(d.msg == "too many services");
+};
+
+@test fn counting_service_headers_matches_parsed_count() void = {
+	assert(count_service_headers(strings::toutf8("")) == 0);
+	assert(count_service_headers(strings::toutf8("# nothing\n")) == 0);
+	assert(count_service_headers(strings::toutf8(
+		"[service \"a\"]\ncommand = /bin/true\n")) == 1);
+	assert(count_service_headers(strings::toutf8(
+		"  [service \"a\"]\ncommand = x\n# [service \"fake\"]\n[service \"b\"]\n")) == 2);
+	assert(count_service_headers(strings::toutf8(
+		"command = [service \"fake\"]\n[service \"a\"]")) == 1);
 };

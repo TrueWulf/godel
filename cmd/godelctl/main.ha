@@ -8,9 +8,9 @@ use strings;
 use time;
 
 const USAGE: str =
-	"usage: godelctl status|status --json|list|uptime|start <service>|stop <service>|catlog <service>|reload|reboot|poweroff";
+	"usage: godelctl status|status --json|list|uptime|boot-report [LOG]|start <service>|stop <service>|catlog <service>|reload|reboot|poweroff";
 
-const VERSION: str = "0.9.5";
+const VERSION: str = "0.9.5.1";
 
 fn bytes_eq(a: []u8, b: []u8) bool = {
 	if (len(a) != len(b)) return false;
@@ -261,6 +261,12 @@ export fn main() void = {
 	};
 	if (len(args) == 2 && args[1] == "uptime") {
 		os::exit(print_uptime());
+	};
+	if (len(args) == 3 && args[1] == "boot-report") {
+		os::exit(run_boot_report(args[2]));
+	};
+	if (len(args) == 2 && args[1] == "boot-report") {
+		os::exit(run_boot_report("/var/log/godel/supervisor.log"));
 	};
 	if (len(args) == 3 && args[1] == "catlog") {
 		if (!running_under_godel()) {

@@ -59,6 +59,7 @@ fn connect_console() void = {
 
 fn run_child(s: *const godel::set, cfg: *const godel::service) never = {
 	let _ = rt::setsid();
+	godel::unblock_signals();
 	godel::attach(&cg, godel::svc_name(cfg), rt::getpid());
 	if (child_notify_w >= 0) {
 		if (rt::dup2(child_notify_w, child_notify_no) < 0) {

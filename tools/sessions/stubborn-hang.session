@@ -14,5 +14,5 @@ verify started stubborn
 send godelctl poweroff
 expect Godel: shutting down timeout=15
 expect sending SIGKILL timeout=15
-expect hung) timeout=15
+expect shutdown timeout timeout=15
 expect powering off timeout=30

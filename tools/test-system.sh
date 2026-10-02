@@ -51,7 +51,7 @@ if [ "$status" = 0 ]; then
 	echo "all system sessions passed"
 	# The basic transcript must yield a parseable boot report: this
 	# verifies the [T+Nms] supervisor stamping end-to-end in QEMU.
-	if sh tools/boot-report.sh "$logs/basic.log" | tee "$logs/basic.report" |
+	if bin/godelctl boot-report "$logs/basic.log" | tee "$logs/basic.report" |
 			grep -q '^boot 1: .*ready='; then
 		echo "boot report parsed (see $logs/basic.report)"
 	else
