@@ -1,83 +1,83 @@
-# Next Session: Godel 0.9.5.1 — sweep verification on metal, Hare ports
+# Next Session: Godel 0.9.5.1 — code quality, dynamic service capacity
 
 ## Language rule
 
 All replies to the user must be in Russian. Code, commit messages, and
 documentation stay in English.
 
-## Current state (2026-10-02, end of session)
+## Access notes (owner-provided, session start)
 
-- **0.9.5 committed on main** (not tagged yet — owner asked to commit
-  now, tag tomorrow): the dirty-shutdown root cause is fixed (final
-  stray sweep before remount-ro), shutdown forensics added
-  (`shutdown.log`, per-mount remount-ro outcomes with errno). Full
-  matrix green: 71 unit tests, fixture matrices (8 backends incl.
-  Alpine extlinux/GRUB), 18+1 QEMU sessions incl. the new
-  `stray-sweep`, sh -n, git diff --check.
-- **Machine still runs 0.9.4 binaries.** Upgrade tomorrow via
-  `~/godel-host/apply.sh`, then verify the sweep on metal: after an
-  evening poweroff, `/var/log/godel/mount-home.log` must show a clean
-  /home (no "recovering journal"), `shutdown.log` must exist with
-  remount-ro results, and `boot-report.sh` should show mount-home
-  dropping from ~2500 ms toward ~100 ms. That closes the boot-speed
-  item measured on 2026-09-27.
-- **stray-sweep session limitation (known, documented)**: it proves
-  the sweep runs and the shutdown completes, but the simulated stray
-  sometimes dies on its own before the sweep (busybox `ps`/`cat
-  /proc/*` output proved flaky in the harness; cgroupfs seq_files
-  hang when read while a member lives). The metal check is the real
-  proof. Improving the simulation is optional later work.
-- Root-cause chain established this session, worth keeping in mind:
-  elogind scopes -> live userland with writable mmaps on /home ->
-  remount-ro EBUSY -> needs_recovery -> ~2.5 s journal replay every
-  boot. Root was always clean because nothing mmaps files there.
+- The owner has pre-approved this session's actions and will confirm
+  anything interactive (browser prompts, doas re-auth) without further
+  discussion. Run `gh auth login -h github.com` at session start: if
+  the stored token is invalid, launch the web flow and wait for the
+  owner to finish it. Never ask for, echo, or store passwords in this
+  repository or its history.
+- After authorization succeeds: push main and the v0.9.5 tag to both
+  remotes (origin = Codeberg, github mirror). Verify divergence first;
+  only the release commits should be missing on GitHub.
+- Machine changes still go only through `~/godel-host/apply.sh`; dinit
+  entries, GRUB default/timeout/hidden policy stay untouchable; QEMU
+  on disposable images only; power only via `doas godelctl
+  reboot/poweroff`.
 
-## Open items (in priority order)
+## Current state (2026-10-02)
 
-1. **Tag + push 0.9.5** after owner review: `git tag v0.9.5`, push
-   main + tag to Codeberg (origin) and GitHub; divergence check first.
-2. **apply.sh upgrade to 0.9.5 + metal verification of the sweep**
-   (details above) — the headline of this release.
-3. **Boot optimization, remaining gates**: with the dirty-journal cost
-   gone, re-measure with boot-report.sh; then evaluate udevadm settle
-   (~1.7 s) against a bounded readiness strategy. Getty gate,
-   autologin ordering, and shutdown safety stay untouched; every
-   change ships with a test.
-4. **boot-report as Hare** (`godelctl boot-report` subcommand); the
-   shell version retires after the harness switches. The awk version
-   is verified byte-identical under busybox awk.
-5. **Installer logic -> Hare** (`cmd/godel-install`): detect,
-   capability discovery, service generation, staging move to Hare;
-   the five bootloader backends stay POSIX plugins behind the bl_*
-   contract; the fixture matrix is the safety net.
-6. **Code trim on the PID 1 core**: dead code audit, no-alloc
-   invariants re-checked, test count must not drop below 71.
-7. **Soak**: autologin on lts (one controlled boot, then strip
-   `~/.cache/godel-login.log`), suspend/resume + power button,
-   Void + Limine friend dry-run (`--bootloader limine --dry-run`).
-8. **vpn-cli**: the user's own console client for happd.
-9. **After 0.9.5.x**: feature freeze.
+- 0.9.5 is committed on main (`ee0d71a`) and pushed to Codeberg only;
+  GitHub push is blocked on the expired `gh` token (see above). Tag
+  `v0.9.5` is not yet created.
+- Dirty-shutdown root cause fixed: final stray sweep in finish_shutdown
+  (SIGKILL every userland process except PID 1, kernel threads/zombies
+  skipped by empty /proc/PID/cmdline, fixed 150 ms teardown wait),
+  shutdown evidence persisted to /var/log/godel/shutdown.log with
+  per-mount remount-ro outcomes.
+- Full matrix green: 71 unit tests, 8-backend fixture matrix, 19 QEMU
+  sessions (incl. stray-sweep), sh -n, git diff --check.
+- Machine still runs 0.9.4 binaries; the stray-sweep metal check is
+  pending (see open items).
 
-## Roadmap to 1.0.0
+## Session goals (0.9.5.1 theme: code quality, no new subsystems)
 
-Stage 4 soak (weeks of daily driving), every deviation recorded.
-Blockers are data-loss or boot-lock bugs only. The owner has selected
-Godel as the hidden GRUB default; dinit entries remain as recovery.
-Then: AUR `godel-bin` (man pages already ship), more distro example
-sets, installer backends. 1.0.0 = quiet weeks + no open blockers +
-docs current.
+1. **Metal verification of 0.9.5 first**: apply.sh upgrade to 0.9.5
+   binaries, evening `doas godelctl poweroff`, next boot must show
+   /home clean (no "recovering journal" in mount-home.log), mount-home
+   dropping from ~2500 ms toward ~100 ms in boot-report. Tag v0.9.5
+   only after this passes.
+2. **Remove the 64-service limit (the owner's headline ask)**.
+   Design constraints:
+   - The no-allocation-after-boot invariant is kept: allocate the
+     runtime tables (svcs, dying, notify_r, reaped) once, at config
+     load, sized to the actual service count. After boot they are
+     plain fixed pointers.
+   - Hidden trap already identified: epoll tag packing. TAG_DYING_BASE
+     = 0x100 and TAG_NOTIFY_BASE = 0x200 currently cap the service
+     index at 8 bits (256). Rebase the tag layout before raising
+     MAX_SERVICES (u64 has room; e.g. move special tags to 1<<40+).
+   - Pick the new ceiling deliberately (256 fits the current tag
+     space after rebasing; going beyond needs no new machinery once
+     tags are relocated). Unit tests must cover 64+ and 256 services;
+     keep the existing `sixty_four_services_fit...` test as the floor
+     and add a capacity test for the new ceiling.
+   - Update docs (architecture.md) to state "no fixed small limit;
+     capacity scales with config at boot".
+3. **boot-report -> Hare** (`godelctl boot-report` subcommand), the
+   shell version retires after the harness switches; awk version is
+   verified byte-identical under busybox awk.
+4. **Installer core -> Hare** (`cmd/godel-install`): detect, capability
+   discovery, service generation, staging; five bootloader backends
+   stay POSIX plugins behind the bl_* contract; fixture matrix is the
+   safety net.
+5. **Trim pass on cmd/godel + godel/**: dead code audit, no-alloc
+   invariants re-checked, test count must not drop below 71+new.
+6. **udev settle** (~1.7 s): bounded, documented readiness strategy if
+   it remains a gate after the mount-home win; getty gate, autologin
+   ordering, shutdown safety untouched; tests required.
 
-## Session protocol on the user's machine
+## Session protocol (unchanged)
 
-- Persistent evidence in `/var/log/godel/` (mode 0600). From 0.9.4
-  every supervisor line carries `[T+Nms]`; from 0.9.5 shutdown also
-  writes `/var/log/godel/shutdown.log` with per-mount remount results.
-- `godelctl` refuses to signal PID 1 without `/run/godel/status`. Never
-  run `godelctl reload` under dinit.
-- Host safety: dinit entries, default boot entry, and the working
-  bootloader config are untouchable; machine changes go through
-  `~/godel-host/apply.sh`; QEMU uses disposable images.
-- Power management under Godel: only `doas godelctl reboot/poweroff`.
-  Never `reboot -f`.
-- Commits go to both remotes (origin = Codeberg, github mirror);
-  force-with-lease only after checking what diverged.
+- Persistent evidence in /var/log/godel/ (mode 0600); supervisor lines
+  carry [T+Nms] since 0.9.4; shutdown.log exists since 0.9.5.
+- godelctl refuses to signal PID 1 without /run/godel/status; never
+  godelctl reload under dinit.
+- Commits go to both remotes; force-with-lease only after checking
+  what diverged. Never suggest reboot -f.
