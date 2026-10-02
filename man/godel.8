@@ -9,10 +9,13 @@ godel \- static Linux init and service supervisor
 .SH DESCRIPTION
 .B godel
 is a static init and service supervisor written in Hare. It runs as PID 1,
-parses a fixed-size configuration snapshot at boot, starts services in
-dependency order, supervises them with pidfd and epoll (no allocation and no
-threads after boot), and drives clean shutdown: services are stopped, then
-filesystems are remounted read-only before the final
+parses a configuration snapshot sized to the configuration at boot, starts
+services in dependency order, supervises them with pidfd and epoll (no
+allocation and no threads after boot), and drives clean shutdown: each
+service gets SIGTERM and its own
+.B shutdown_timeout
+as the deadline, services that outlive it get SIGKILL, then filesystems
+are remounted read-only before the final
 .BR sync (2)
 and the
 .BR reboot (2)
@@ -80,10 +83,11 @@ Drop the child to user[:group] after the cgroup attach, before
 .B log = no
 Keep service output on the console instead of a per-service log file.
 .PP
-Hard limits are deliberate: 64 services, 8 command arguments, 4 env entries,
+Per-service hard limits are deliberate: 8 command arguments, 4 env entries,
 4
 .B after
-references per service.
+references per service. The service count itself has no fixed ceiling:
+snapshot storage scales with the configuration at boot.
 .SH FILES
 .TP
 .I /etc/godel/services.conf

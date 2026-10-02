@@ -22,7 +22,7 @@ type dir_name = struct {
 	nlen: u8,
 };
 
-let dir_names: [godel::MAX_SERVICES]dir_name = [dir_name { ... }...];
+let dir_names: [godel::MAX_FILES]dir_name = [dir_name { ... }...];
 let dir_count: size = 0;
 let fullbuf: [SRC_NAME_MAX]u8 = [0...];
 
@@ -130,7 +130,7 @@ fn scan_entries(dfd: int) (void | godel::diag) = {
 					msg = "config file name length unsupported",
 				};
 			};
-			if (dir_count == godel::MAX_SERVICES) {
+			if (dir_count == godel::MAX_FILES) {
 				return godel::diag {
 					file = 0,
 					line = 1,
@@ -213,7 +213,8 @@ fn load_from(
 	file_path: (void | str),
 	scan_path: (void | str),
 ) (void | godel::diag) = {
-	let content: [godel::BUF_CAPACITY]u8 = [0...];
+	const content = alloc([0...], godel::BUF_CAPACITY) as []u8;
+	defer free(content);
 	const s = &sets[next];
 	godel::reset_set(s);
 	src_count = 0;
@@ -235,18 +236,17 @@ fn load_from(
 			};
 		};
 	};
+	let conf_src: (void | []u8) = void;
 	match (file_path) {
 	case void => void;
 	case let p: str =>
-		const c = match (read_file(p, content)) {
-		case void => void;
-		case let c: []u8 =>
-			match (godel::parse_file(s, c, 0)) {
-			case void => void;
-			case let d: godel::diag => return d;
-			};
-		};
+		conf_src = read_file(p, content);
 	};
+	let total: size = match (conf_src) {
+	case void => yield 0;
+	case let c: []u8 => yield godel::count_service_headers(c);
+	};
+	let dir_ok = false;
 	match (scan_path) {
 	case void => void;
 	case let p: str => {
@@ -258,17 +258,30 @@ fn load_from(
 		if (scanned >= 0) {
 			defer godel::close_fd(scanned);
 			match (scan_entries(scanned)) {
-			case void => void;
+			case void =>
+				total += dir_count;
+				dir_ok = true;
 			case let d: godel::diag => return d;
-			};
-			for (let i = 0z; i < dir_count; i += 1) {
-				match (load_dir_file(s, content, p, i)) {
-				case void => void;
-				case let d: godel::diag => return d;
-				};
 			};
 		};
 	};
+	};
+	godel::reserve_set(s, total);
+	match (conf_src) {
+	case void => void;
+	case let c: []u8 =>
+		match (godel::parse_file(s, c, 0)) {
+		case void => void;
+		case let d: godel::diag => return d;
+		};
+	};
+	if (dir_ok) {
+		for (let i = 0z; i < dir_count; i += 1) {
+			match (load_dir_file(s, content, scan_path: str, i)) {
+			case void => void;
+			case let d: godel::diag => return d;
+			};
+		};
 	};
 	return godel::finish_set(s);
 };
@@ -298,16 +311,14 @@ fn report_warnings(set_index: size) void = {
 
 fn apply_config(next: size) void = {
 	const old = active_set;
-	let match_idx: [godel::MAX_SERVICES]u8 = [godel::NO_INDEX...];
-	let matched: [godel::MAX_SERVICES]bool = [false...];
-
-	godel::match_running(&sets[next], &sets[old], svcs[..], &match_idx, &matched);
+	ensure_tables(sets[next].count);
+	godel::match_running(&sets[next], &sets[old], svcs[..], match_idx, matched);
 	for (let j = 0z; j < sets[old].count; j += 1) {
 		if (!matched[j] && svcs[j].state == godel::state::up) stop_service(j);
 	};
 	for (let i = 0z; i < sets[next].count; i += 1) {
-		const j = match_idx[i];
-		if (j == godel::NO_INDEX) {
+		const j = match_idx[i]: size;
+		if (j == godel::NO_INDEX: size) {
 			svcs[i] = godel::new_runtime();
 			notify_r[i] = -1;
 			continue;
@@ -326,8 +337,12 @@ fn apply_config(next: size) void = {
 		if (svcs[i].pidfd >= 0) {
 			let _ = godel::epoll_modify(&ep, svcs[i].pidfd, i: u64);
 		};
+		if (notify_r[i] >= 0) {
+			let _ = godel::epoll_modify(&ep, notify_r[i],
+				godel::TAG_NOTIFY_BASE + i: u64);
+		};
 	};
-	for (let i = sets[next].count: size; i < godel::MAX_SERVICES; i += 1) {
+	for (let i = sets[next].count; i < len(svcs); i += 1) {
 		svcs[i] = godel::runtime { pidfd = -1, ... };
 		notify_r[i] = -1;
 	};
@@ -346,16 +361,31 @@ fn apply_config(next: size) void = {
 	write_status();
 };
 
+let boot_announced = false;
+
 fn pump_starts() void = {
 	if (shutdown.active) return;
-	let order: [godel::MAX_SERVICES]size = [0...];
-	const total = godel::ready_starts(&sets[active_set], svcs[..], &order);
+	const total = godel::ready_starts(&sets[active_set], svcs[..],
+		start_order_buf);
 	for (let k = 0z; k < total; k += 1) {
-		const index = order[k];
+		const index = start_order_buf[k];
 		if (!svcs[index].pending) continue;
 		svcs[index].pending = false;
 		start(index);
 	};
+	if (!boot_announced && all_pending_launched()) {
+		boot_announced = true;
+		logf("Godel: boot complete in {} ms; {} service(s) up\n",
+			godel::now_ms() - boot_ready_ms,
+			sets[active_set].count: i64);
+	};
+};
+
+fn all_pending_launched() bool = {
+	for (let i = 0z; i < sets[active_set].count; i += 1) {
+		if (svcs[i].pending) return false;
+	};
+	return true;
 };
 
 fn reload() void = {

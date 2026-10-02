@@ -36,3 +36,15 @@ use time;
 	assert(mask.__val[0] & (1 << 14) != 0);
 	assert(mask.__val[0] & (1 << 16) != 0);
 };
+
+// The tag layout must never constrain the service index space: the
+// special ranges are far apart and can absorb any plausible count.
+@test fn tag_ranges_leave_room_for_service_indexes() void = {
+	assert(TAG_SIGNAL & (TAG_SIGNAL - 1) == 0);
+	assert(TAG_TIMER > TAG_SIGNAL);
+	assert(TAG_RESCUE > TAG_TIMER);
+	assert(TAG_CTL > TAG_RESCUE);
+	assert(TAG_DYING_BASE > TAG_CTL);
+	assert(TAG_NOTIFY_BASE > TAG_DYING_BASE + 4096);
+	assert(TAG_NOTIFY_BASE + 4096 < 1 << 48);
+};

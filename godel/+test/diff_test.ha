@@ -15,12 +15,12 @@ command = /bin/worker
 [service \"web\"]
 command = /bin/web --new
 ")) is void);
-	let runtimes: [MAX_SERVICES]runtime = [runtime { pidfd = -1, ... }...];
+	let runtimes: [4]runtime = [runtime { pidfd = -1, ... }...];
 	runtimes[0].state = state::up;
 	runtimes[1].state = state::up;
-	let indices: [MAX_SERVICES]u8 = [NO_INDEX...];
-	let matched: [MAX_SERVICES]bool = [false...];
-	match_running(&next, &old, runtimes[..], &indices, &matched);
+	let indices: [4]u16 = [NO_INDEX...];
+	let matched: [4]bool = [false...];
+	match_running(&next, &old, runtimes[..], indices[..], matched[..]);
 	assert(indices[0] == 1);
 	assert(indices[1] == NO_INDEX);
 	assert(matched[1]);

@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.9.5.1 - 2026-10-02
+
+- Removed the fixed 64-service ceiling. Snapshot storage is reserved
+  once per generation, sized to the actual service count before parsing
+  begins; the runtime tables (per-service state, dying slots, readiness
+  pipes, orphan ring, status buffer, start-order scratch) are allocated
+  alongside it and are plain fixed pointers afterwards, so the PID 1
+  event loop still never allocates. The `epoll` tag layout moved the
+  special and per-class tags to high bit positions (1<<40 and above) so
+  the index space is never capped by the tag packing. Per-service
+  limits are unchanged (8 argv, 4 env, 4 after, 31-byte names).
+- Unit tests cover 64, 128, and 256 services (permutation check on the
+  start order at 128/256); a QEMU session boots 259 configured services
+  and verifies all of them reach `up` before a clean poweroff.
+- `godelctl boot-report` (Hare) replaces the awk implementation; output
+  is byte-identical on the full QEMU log corpus, the shell/awk version
+  is retired, and the fixture harness now drives the subcommand.
+- Installer core moved to Hare (`cmd/godel-install`, `bin/godel-install`):
+  distro detection, OpenRC capability discovery, kernel/initramfs/root
+  detection, fstab parsing, service generation, staging, validation, and
+  commit. The five bootloader backends stay POSIX plugins behind the
+  bl_* contract, driven by `tools/install.sh` through a state file. Both
+  fixture matrices (single-backend and 7-scenario compatibility) pass
+  unchanged.
+- Fixed a latent reload bug found during the tag-layout rebase: a moved
+  service's readiness pipe is re-tagged in epoll, so a late readiness
+  newline can no longer flip the wrong service's ready flag.
+- Fixed the root cause of slow shutdown: PID 1 runs with supervisor
+  signals blocked (signalfd delivery) and children inherited that mask
+  across fork+exec, so SIGTERM never reached any service and every
+  shutdown rode to the deadline and finished under SIGKILL. Children
+  now reset their signal mask before exec. Shutdown is per-service:
+  each service's own `shutdown_timeout` is its deadline, SIGKILL lands
+  only on services that outlive it, and the power switch follows the
+  last exit instead of a global timeout. Measured in QEMU: 5.2 s to
+  2.2 s with an interactive getty shell (the only deliberate holdout),
+  ~0.4 s with none; 259-service boot shuts down in 2.4 s.
+- Console output is now a timeline: `Godel: boot complete in N ms` is
+  logged when the last dependency chain settles (the existing
+  `Godel: ready in` line keeps measuring configuration load), shutdown
+  logs `stopping N running service(s)`, per-service SIGKILL decisions,
+  and a final `Godel: down in N ms (remount-ro X ms, sync Y ms)`.
+- SIGKILL fallback after the grace interval shrank from 1 s to 250 ms.
+
 ## 0.9.5 - 2026-10-02
 
 - Fixed the last dirty-shutdown path: session managers (elogind scopes)

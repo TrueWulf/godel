@@ -19,8 +19,8 @@ export fn match_running(
 	next: *const set,
 	old: *const set,
 	runtimes: []runtime,
-	indices: *[MAX_SERVICES]u8,
-	matched: *[MAX_SERVICES]bool,
+	indices: []u16,
+	matched: []bool,
 ) void = {
 	for (let i = 0z; i < next.count; i += 1) {
 		for (let j = 0z; j < old.count; j += 1) {
@@ -32,7 +32,7 @@ export fn match_running(
 			if (bytes::equal(svc_name(&next.services[i]),
 					svc_name(&old.services[j]))
 					&& argv_equal(next, &next.services[i], old, &old.services[j])) {
-				indices[i] = j: u8;
+				indices[i] = j: u16;
 				matched[j] = true;
 				break;
 			};

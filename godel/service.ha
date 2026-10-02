@@ -28,6 +28,7 @@ export type runtime = struct {
 	restarts: u32,
 	started_at: i64,
 	restart_at: i64,
+	shutdown_at: i64,
 	ready: bool,
 	released: bool,
 	exited: bool,

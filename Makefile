@@ -5,13 +5,14 @@ export PATH := $(HOME)/tools/hare/bin:$(PATH)
 
 GODEL_SRC := $(wildcard cmd/godel/*.ha godel/*.ha)
 GODELCTL_SRC := $(wildcard cmd/godelctl/*.ha)
+GODEL_INSTALL_SRC := $(wildcard cmd/godel-install/*.ha)
 QEMU_SESSION_SRC := $(wildcard cmd/qemu-session/*.ha)
 
 KERNEL ?= /boot/vmlinuz-linux-lts
 
 .PHONY: all test install install-godel install-artix-grub image qemu-system qemu-reboot qemu-poweroff qemu-badconfig alpine-image qemu-alpine clean
 
-all: bin/godel bin/godelctl bin/qemu-session
+all: bin/godel bin/godelctl bin/godel-install bin/qemu-session
 
 bin/godel: $(GODEL_SRC)
 	@mkdir -p bin
@@ -21,12 +22,22 @@ bin/godelctl: $(GODELCTL_SRC)
 	@mkdir -p bin
 	$(HARE) build -o bin/godelctl ./cmd/godelctl
 
+bin/godel-install: $(GODEL_INSTALL_SRC)
+	@mkdir -p bin
+	$(HARE) build -o bin/godel-install ./cmd/godel-install
+
 bin/qemu-session: $(QEMU_SESSION_SRC)
 	@mkdir -p bin
 	$(HARE) build -o bin/qemu-session ./cmd/qemu-session
 
 test:
 	$(HARE) test ./godel
+
+test-system: all
+	sh tools/test-system.sh
+
+soak: all
+	sh tools/soak.sh $(N)
 
 install: bin/godel bin/godelctl
 	install -Dm755 bin/godel $(DESTDIR)$(PREFIX)/sbin/godel

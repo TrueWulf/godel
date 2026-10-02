@@ -1,12 +1,12 @@
 use rt;
 use time;
 
-export def TAG_SIGNAL: u64 = 0xffff_ffff;
-export def TAG_TIMER: u64 = 0xffff_fffe;
-export def TAG_RESCUE: u64 = 0xffff_fffd;
-export def TAG_CTL: u64 = 0xffff_fffc;
-export def TAG_DYING_BASE: u64 = 0x100;
-export def TAG_NOTIFY_BASE: u64 = 0x200;
+export def TAG_SIGNAL: u64 = 1 << 40;
+export def TAG_TIMER: u64 = 1 << 41;
+export def TAG_RESCUE: u64 = 1 << 42;
+export def TAG_CTL: u64 = 1 << 43;
+export def TAG_DYING_BASE: u64 = 1 << 44;
+export def TAG_NOTIFY_BASE: u64 = 1 << 45;
 
 export fn now_ms() i64 = {
 	let ts = rt::timespec { tv_sec = 0, tv_nsec = 0 };
@@ -79,6 +79,12 @@ export fn signal_mask() rt::sigset = {
 export fn block_signals(mask: *rt::sigset) void = {
 	let old = rt::sigset { __val = [0] };
 	rt::sigprocmask(rt::SIG_BLOCK, mask, &old)!;
+};
+
+export fn unblock_signals() void = {
+	let empty = rt::sigset { __val = [0] };
+	rt::sigemptyset(&empty);
+	rt::sigprocmask(rt::SIG_SETMASK, &empty, null)!;
 };
 
 export fn new_signalfd(mask: *rt::sigset) int = {

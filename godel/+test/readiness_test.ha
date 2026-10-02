@@ -28,17 +28,17 @@ fn rfind(s: *set, name: str) size = {
 	let s = set { ... };
 	rparse_ok(&s, "[service \"setup\"]\ncommand = /bin/true\ntype = oneshot\nrestart = never\n[service \"late\"]\ncommand = /bin/true\nafter = setup\n[service \"free\"]\ncommand = /bin/true\n");
 	const si = rfind(&s, "setup");
-	let rts: [MAX_SERVICES]runtime = [new_runtime()...];
+	let rts: [8]runtime = [new_runtime()...];
 	rts[si].pid = 42;
-	let order: [MAX_SERVICES]size = [0...];
-	let n = ready_starts(&s, rts, &order);
+	let order: [8]size = [0...];
+	let n = ready_starts(&s, rts[..], order[..]);
 	assert(n == 2);
 	assert(order[0] == si);
 	assert(order[1] == rfind(&s, "free"));
 	rts[si].pid = 0;
 	rts[si].exited = true;
 	rts[si].last_status = 0;
-	n = ready_starts(&s, rts, &order);
+	n = ready_starts(&s, rts[..], order[..]);
 	assert(n == 3);
 	assert(order[1] == rfind(&s, "late"));
 	assert(order[2] == rfind(&s, "free"));
@@ -47,7 +47,7 @@ fn rfind(s: *set, name: str) size = {
 @test fn plain_ordering_satisfied_by_running_dependency() void = {
 	let s = set { ... };
 	rparse_ok(&s, "[service \"a\"]\ncommand = /bin/true\n[service \"b\"]\ncommand = /bin/true\nafter = a\n");
-	let rts: [MAX_SERVICES]runtime = [new_runtime()...];
+	let rts: [8]runtime = [new_runtime()...];
 	rts[rfind(&s, "a")].pid = 42;
 	const dep = &s.services[rfind(&s, "a")];
 	assert(dep_satisfied(dep, &rts[rfind(&s, "a")]));
@@ -57,7 +57,7 @@ fn rfind(s: *set, name: str) size = {
 	let s = set { ... };
 	rparse_ok(&s, "[service \"a\"]\ncommand = /bin/true\ntype = oneshot\nrestart = never\n[service \"b\"]\ncommand = /bin/true\nafter = a\n");
 	const ai = rfind(&s, "a");
-	let rts: [MAX_SERVICES]runtime = [new_runtime()...];
+	let rts: [8]runtime = [new_runtime()...];
 	rts[ai].pid = 42;
 	assert(!dep_satisfied(&s.services[ai], &rts[ai]));
 	rts[ai].pid = 0;
@@ -72,7 +72,7 @@ fn rfind(s: *set, name: str) size = {
 	let s = set { ... };
 	rparse_ok(&s, "[service \"a\"]\ncommand = /bin/true\nnotification-fd = 3\n[service \"b\"]\ncommand = /bin/true\nafter = a\n");
 	const ai = rfind(&s, "a");
-	let rts: [MAX_SERVICES]runtime = [new_runtime()...];
+	let rts: [8]runtime = [new_runtime()...];
 	rts[ai].pid = 42;
 	assert(!dep_satisfied(&s.services[ai], &rts[ai]));
 	rts[ai].ready = true;
@@ -83,7 +83,7 @@ fn rfind(s: *set, name: str) size = {
 	let s = set { ... };
 	rparse_ok(&s, "[service \"a\"]\ncommand = /bin/true\ntype = oneshot\nrestart = never\nnotification-fd = 3\n[service \"b\"]\ncommand = /bin/true\nafter = a\n");
 	const ai = rfind(&s, "a");
-	let rts: [MAX_SERVICES]runtime = [new_runtime()...];
+	let rts: [8]runtime = [new_runtime()...];
 	rts[ai].pid = 42;
 	assert(!dep_satisfied(&s.services[ai], &rts[ai]));
 	rts[ai].pid = 0;
@@ -99,15 +99,15 @@ fn rfind(s: *set, name: str) size = {
 	let s = set { ... };
 	rparse_ok(&s, "[service \"late\"]\ncommand = /bin/true\nnotification-fd = 3\n[service \"dep\"]\ncommand = /bin/true\nafter = late\n[service \"free\"]\ncommand = /bin/true\n");
 	const li = rfind(&s, "late");
-	let rts: [MAX_SERVICES]runtime = [new_runtime()...];
+	let rts: [8]runtime = [new_runtime()...];
 	rts[li].pid = 42;
-	let order: [MAX_SERVICES]size = [0...];
-	let n = ready_starts(&s, rts, &order);
+	let order: [8]size = [0...];
+	let n = ready_starts(&s, rts[..], order[..]);
 	assert(n == 2);
 	assert(order[0] == li);
 	assert(order[1] == rfind(&s, "free"));
 	rts[li].ready = true;
-	n = ready_starts(&s, rts, &order);
+	n = ready_starts(&s, rts[..], order[..]);
 	assert(n == 3);
 	assert(order[1] == rfind(&s, "dep"));
 	assert(order[2] == rfind(&s, "free"));
@@ -116,11 +116,11 @@ fn rfind(s: *set, name: str) size = {
 @test fn ready_starts_without_notification_matches_start_order() void = {
 	let s = set { ... };
 	rparse_ok(&s, "[service \"c\"]\ncommand = /bin/true\nafter = a b\n[service \"a\"]\ncommand = /bin/true\n[service \"b\"]\ncommand = /bin/true\nafter = a\n");
-	let rts: [MAX_SERVICES]runtime = [new_runtime()...];
-	let order: [MAX_SERVICES]size = [0...];
-	let plain: [MAX_SERVICES]size = [0...];
-	const n = ready_starts(&s, rts, &order);
-	const m = start_order(&s, &plain);
+	let rts: [8]runtime = [new_runtime()...];
+	let order: [8]size = [0...];
+	let plain: [8]size = [0...];
+	const n = ready_starts(&s, rts[..], order[..]);
+	const m = start_order(&s, plain[..]);
 	assert(n == m);
 	assert(n == 3);
 	for (let i = 0z; i < n; i += 1) {
@@ -132,7 +132,7 @@ fn rfind(s: *set, name: str) size = {
 	let s = set { ... };
 	rparse_ok(&s, "[service \"a\"]\ncommand = /bin/true\nnotification-fd = 3\n[service \"b\"]\ncommand = /bin/true\nafter = a\n");
 	const ai = rfind(&s, "a");
-	let rts: [MAX_SERVICES]runtime = [new_runtime()...];
+	let rts: [8]runtime = [new_runtime()...];
 	rts[ai].pid = 42;
 	assert(!dep_satisfied(&s.services[ai], &rts[ai]));
 	rts[ai].released = true;

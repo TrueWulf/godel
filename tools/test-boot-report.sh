@@ -1,11 +1,13 @@
 #!/bin/sh
-# Fixture test for tools/boot-report.sh: verifies the extracted metrics
+# Fixture test for godelctl boot-report: verifies the extracted metrics
 # on a synthetic supervisor transcript covering two boots, readiness
 # timestamps, oneshot durations, and a full shutdown profile.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
+
+test -x bin/godelctl || { echo "no bin/godelctl; run make" >&2; exit 1; }
 
 fx=$(mktemp -d /tmp/godel-boot-report.XXXXXX)
 trap 'rm -rf "$fx"' EXIT
@@ -35,7 +37,7 @@ cat > "$fx/supervisor.log" <<'EOF'
 [T+4300ms] Godel: powering off now
 EOF
 
-out=$(sh tools/boot-report.sh "$fx/supervisor.log")
+out=$(bin/godelctl boot-report "$fx/supervisor.log")
 echo "$out"
 
 echo "$out" | grep -q '^boot 1: pid1=T+90ms ready=T+95ms load=5ms$'
@@ -49,13 +51,13 @@ echo "$out" | grep -q '^boot 2: pid1=T+4000ms ready=T+4005ms load=5ms$'
 
 # a pre-0.9.4 log (no stamps) must fail loudly
 printf 'Godel 0.9.2: starting\nGodel: ready in 7 ms\n' > "$fx/old.log"
-if sh tools/boot-report.sh "$fx/old.log" >/dev/null 2>&1; then
+if bin/godelctl boot-report "$fx/old.log" >/dev/null 2>&1; then
 	echo "test-boot-report: unstamped log should fail" >&2
 	exit 1
 fi
 
 # missing file must fail
-if sh tools/boot-report.sh "$fx/nonexistent.log" >/dev/null 2>&1; then
+if bin/godelctl boot-report "$fx/nonexistent.log" >/dev/null 2>&1; then
 	echo "test-boot-report: missing file should fail" >&2
 	exit 1
 fi
