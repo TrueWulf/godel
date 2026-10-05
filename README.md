@@ -36,7 +36,8 @@ Shepherd; it is small enough to read in one sitting, which is the point.
 - per-service logs (0600, rotation), `run-as`, `log = no`, oneshots
 - per-service shutdown deadlines; SIGKILL only for services that
   outlive their own timeout
-- `godelctl status|start|stop|catlog|boot-report|reload|reboot|poweroff`
+- `godelctl status [--json]|list|uptime|boot-report [LOG]|start|stop|
+  catlog|reload|reboot|poweroff`
 - `godel -t PATH` validation with line-numbered diagnostics
 
 ## Build
@@ -51,7 +52,7 @@ make test     # 77 unit tests
 ## Test
 
 ```sh
-make test-system     # 19 scripted QEMU sessions on a disposable image
+make test-system     # 20 scripted QEMU sessions on a disposable image
 tools/soak.sh 50     # 50 boot/reboot cycles, transcripts kept
 sh tools/test-compat-install.sh   # installer fixture matrix
 ```
@@ -66,8 +67,9 @@ doas make install-godel BOOTLOADER=grub   # also: limine, extlinux,
                                           # systemd-boot, refind
 ```
 
-`tools/install.sh` detects the distro and capabilities, generates the
-service set, validates it, stages everything, and adds a separate
+The Hare core (`bin/godel-install`) detects the distro and its
+capabilities, generates the desktop service set, validates it, and
+stages everything; `tools/install.sh` drives it and adds a separate
 **Godel (test)** boot entry — the current default entry is never
 touched. Backups land in `/etc/godel/backups`.
 

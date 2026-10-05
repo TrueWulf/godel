@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.5.2 - 2026-10-05
 
 - The desktop profile starts elogind in the foreground under direct
   supervision (`restart = always`, `restart_delay = 1s`,
@@ -9,6 +9,9 @@
   milliseconds, so the supervisor logged a clean exit while the real
   daemon ran unsupervised and would never be restarted after a crash.
   The same shape is applied to the metal service pack.
+- README accuracy pass: the full `godelctl` verb list (`status --json`,
+  `list`, `uptime` were missing), the current QEMU session count, and
+  the installer split into the Hare core plus the thin shell driver.
 
 ## 0.9.5.1 - 2026-10-02
 
