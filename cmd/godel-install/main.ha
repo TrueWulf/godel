@@ -613,7 +613,7 @@ fn generate_profile(c: *ctx, fb: *fstab) void = {
 	if (elogind is str) {
 		const body = strings::concat([
 			"[service \"elogind\"]\ncommand = ", elogind: str,
-			" --daemon\ntype = oneshot\nrestart = never\nafter = ",
+			"\nrestart = always\nrestart_delay = 1s\nshutdown_timeout = 2s\nlog = no\nafter = ",
 			after_desktop,
 		]...)!;
 		defer free(body);

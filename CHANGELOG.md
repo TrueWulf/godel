@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- The desktop profile starts elogind in the foreground under direct
+  supervision (`restart = always`, `restart_delay = 1s`,
+  `shutdown_timeout = 2s`, `log = no`) instead of `--daemon` with
+  `type = oneshot`. The daemonizing parent exited cleanly within
+  milliseconds, so the supervisor logged a clean exit while the real
+  daemon ran unsupervised and would never be restarted after a crash.
+  The same shape is applied to the metal service pack.
+
 ## 0.9.5.1 - 2026-10-02
 
 - Removed the fixed 64-service ceiling. Snapshot storage is reserved
