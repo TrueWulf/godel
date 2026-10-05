@@ -22,6 +22,11 @@ next without your own testing.
 - Bootloaders: **GRUB**, **Limine** (current `limine.conf` and legacy
   `limine.cfg`), **extlinux/syslinux**, **systemd-boot**, and **rEFInd**.
   All backends add a test entry only: the current default remains untouched.
+  Limine note: release 12.x ships no third-party filesystem drivers —
+  on UEFI it reads the ESP only (FAT32, NTFS), so the backend requires
+  the kernel and initramfs to live on the ESP and references them via
+  `boot()`. Paths into an ext4 root (`uuid(...)`, `hdd(...)`) cannot
+  resolve and panic with "Failed to open kernel".
 - Profile: **desktop base** — fsck/rootfs remount, fstab mounts, fstab
   swap, loopback, device manager (udev + trigger, or busybox `mdev` on
   musl userlands), sysctl, D-Bus, elogind, NetworkManager, two gettys,
