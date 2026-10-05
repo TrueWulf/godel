@@ -45,8 +45,8 @@ Shepherd; it is small enough to read in one sitting, which is the point.
 Hare 0.26.0.1+, Linux, make.
 
 ```sh
-make          # bin/godel, bin/godelctl, bin/godel-install
-make test     # 77 unit tests
+make
+make test
 ```
 
 ## Test
