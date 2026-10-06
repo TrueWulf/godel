@@ -2,9 +2,9 @@
 
 <div align="center">
 
-A small, static Linux init and service supervisor in Hare.
+A modern, simple, and fast Linux init and service supervisor written in Hare.
 
-[Architecture](docs/architecture.md) · [Install](docs/install.md) · [First boot](docs/first-boot.md) · [Comparison](docs/comparison.md) · [Benchmarks](docs/benchmarks.md)
+[Architecture](docs/architecture.md) · [Install](docs/install.md) · [License](LICENSE)
 
 </div>
 
@@ -13,7 +13,7 @@ A small, static Linux init and service supervisor in Hare.
 godel is one static, libc-free binary that runs as PID 1 and supervises
 every service: dependency ordering, restart policies, readiness gating,
 per-service logs, `run-as`, atomic reload, recovery. No allocation after
-boot; ~360 KB stripped. It is the running system init on the
+boot; ~380 KB stripped. It is the running system init on the
 development machine (Artix, GRUB and Limine).
 
 Built for VMs, embedded images, and personal machines on non-systemd
@@ -89,8 +89,3 @@ Keys: `command`, `after`, `restart`, `restart_limit`, `restart_delay`,
 Experimental. Runs on one machine, in daily use; no distribution
 packaging yet. Linux only; prefers pidfds (5.3+) and `cgroup.kill`
 (5.14+), degrades gracefully without them.
-
-## License
-
-BSD-2-Clause — see [LICENSE](LICENSE). The linked Hare standard library
-is MPL-2.0 on its own terms.

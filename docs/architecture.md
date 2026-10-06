@@ -106,31 +106,24 @@ run-as:
 ## Readiness and start ordering
 
 `after` is start ordering: a dependent starts once its dependency has
-been started. That remains the default for every service, with one
-refinement: a plain oneshot dependency (no `notification-fd`) holds its
-dependents until it has *completed* — cleanly or not, since a failed
-mount or fsck oneshot must not wedge boot forever. This closes the
-boot race where an autologin getty ran while `mount-home` was still
-mounting `/home`. A service that declares `notification-fd = N` (N from
-3 to 1024) opts into readiness:
-it is started with the write end of a pipe at fd N and becomes ready by
-writing a newline to it; any other bytes are ignored, and the read end
-stays registered so late newlines still count. This is the same wire
+been started. A plain oneshot dependency (no `notification-fd`) holds
+its dependents until it has *completed* — cleanly or not, since a
+failed mount or fsck oneshot must not wedge boot forever. A service
+that declares `notification-fd = N` (N from 3 to 1024) opts into
+readiness: it is started with the write end of a pipe at fd N and
+becomes ready by writing a newline to it; the read end stays
+registered so late newlines still count. This is the same wire
 convention s6, dinit, and nitro use, so their service packs port over.
 
-Readiness changes gating only where the *dependency* opted in (or is a
-plain oneshot, as above). A
-dependent of a notified service starts only after the newline (or, for a
-notified oneshot, after a clean exit). Dependents of plain services
-follow plain ordering exactly as before. A notified service that never
-signals holds its dependents indefinitely unless the service also
-declares `readiness_timeout`: at the deadline the supervisor logs the
-timeout, stops the service (SIGTERM, no restart), marks it in the
-status snapshot as `ready=timeout`, and releases its dependents. A
-notified service that crashes re-enters the unready state on its next
-start. If the readiness pipe cannot be created or registered, the
-service logs the fallback and its dependents proceed under plain
-ordering.
+Gating changes only where the *dependency* opted in (or is a plain
+oneshot, as above). A notified service that never signals holds its
+dependents indefinitely unless it also declares `readiness_timeout`:
+at the deadline the supervisor logs the timeout, stops the service
+(SIGTERM, no restart), marks it `ready=timeout` in the status
+snapshot, and releases its dependents. A notified service that crashes
+re-enters the unready state on its next start. If the readiness pipe
+cannot be created or registered, the service logs the fallback and its
+dependents proceed under plain ordering.
 
 The boot configuration of the test image uses this twice: `rootfs-rw`
 and `tmpfs-tmp` are notified oneshots, so gettys start only after the
@@ -146,15 +139,15 @@ absent. Log files are created with mode 0600 (root-readable only). A
 service that must keep the console — a getty on another vty, for
 example — opts out with `log = no` and inherits the console instead.
 
-The honest timestamp answer: the child writes its own bytes directly
-into the log file descriptor, so the supervisor cannot prefix each
-line with a wall-clock time. godel instead writes a supervisor-side
-header at every (re)open — `== godel: <name> log opened
-2026-09-12T14:21:05Z` — and everything between two headers is raw,
-untimestamped service output. Rotation is size-based (64 KiB) and
-happens when a service (re)starts: an oversized log is renamed to
-`<name>.log.1` before the new file is opened. If neither location is
-writable the service keeps the console rather than dropping output.
+Timestamps: the child writes its own bytes directly into the log file
+descriptor, so the supervisor cannot prefix each line with a wall-clock
+time. godel writes a supervisor-side header at every (re)open —
+`== godel: <name> log opened 2026-09-12T14:21:05Z` — and everything
+between two headers is raw, untimestamped service output. Rotation is
+size-based (64 KiB) and happens when a service (re)starts: an oversized
+log is renamed to `<name>.log.1` before the new file is opened. If
+neither location is writable the service keeps the console rather than
+dropping output.
 
 ## Per-service identity
 
