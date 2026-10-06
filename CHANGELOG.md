@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.9.5.3 - 2026-10-05
+
+- The installer is one binary now. The bootloader phase (detect,
+  backup, entry, finish, verify for GRUB, Limine, extlinux,
+  systemd-boot, and rEFInd) moved from five POSIX-shell plugins and a
+  shell driver into `bin/godel-install` itself; `tools/install.sh` and
+  `tools/bootloaders/` are gone, about 450 lines of shell with them.
+  `make install-godel BOOTLOADER=...` calls the binary directly; the
+  fixture matrices (`test-install.sh`, `test-compat-install.sh`) pass
+  unchanged in what they assert.
+- Backup stamps gained a nanosecond suffix so back-to-back runs can no
+  longer overwrite each other's backups.
+- README and docs sobered: no hardware-performance speculation, plain
+  statements of what runs where (Artix as the running system init under
+  GRUB and Limine) and what is only fixture-covered.
+
 ## 0.9.5.2 - 2026-10-05
 
 - The desktop profile starts elogind in the foreground under direct

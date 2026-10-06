@@ -32,7 +32,7 @@ run_install() {
 	backend=$1
 	shift
 	env ROOT="$fx" CMDLINE_FILE="$fx/cmdline" ROOTDEV=/dev/sda1 ROOTFSTYPE=ext4 \
-		"$@" sh tools/install.sh --bootloader "$backend" --force > "$fx/run.log" 2>&1 || {
+		"$@" bin/godel-install --bootloader "$backend" --force > "$fx/run.log" 2>&1 || {
 		cat "$fx/run.log"; echo "test-compat-install: $backend install failed" >&2; exit 1;
 	}
 	bin/godel -t "$fx/etc/godel/services.d" >/dev/null || {
@@ -225,7 +225,7 @@ EOF
 	chmod 755 "$fx/fake-mkconfig.sh"
 	env ROOT="$fx" CMDLINE_FILE="$fx/cmdline" ROOTDEV=/dev/sda1 ROOTFSTYPE=ext4 \
 		GRUB_MKCONFIG="$fx/fake-mkconfig.sh" \
-		sh tools/install.sh --bootloader grub --force > "$fx/run.log" 2>&1 || {
+		bin/godel-install --bootloader grub --force > "$fx/run.log" 2>&1 || {
 		cat "$fx/run.log"; echo "test-compat-install: alpine grub install failed" >&2; exit 1;
 	}
 	assert_alpine_common "$fx/run.log"

@@ -6,19 +6,18 @@ generates them.
 
 ## Supported today
 
-Support is stated in three grades. Do not read up from one grade to the
-next without your own testing.
+Godel runs as the system init on the development machine (Artix, GRUB
+and Limine). Verified every change:
 
-- **fixture-tested**: Artix/Arch (GRUB), Void (Limine current/legacy,
-  extlinux, systemd-boot, rEFInd), and Alpine (extlinux, GRUB; musl +
-  busybox `mdev` profile). Covered by CI fixtures.
-- **QEMU-tested**: the Alpine `mdev` profile additionally boots a real
-  musl/busybox rootfs (from the Alpine repositories) with Godel as
-  init: mdev scan, gettys, clean shutdown (`make qemu-alpine`).
-- **real-machine-tested**: Artix/GRUB on the development machine. A
-  fresh machine of any supported family starts at fixture-tested.
-- Preview targets (capability-detected, run `--dry-run` and inspect
-  every reported capability): Debian/Ubuntu, Fedora, openSUSE, Gentoo.
+- The installer compatibility matrix covers Void and Alpine fixtures
+  over GRUB, Limine (current and legacy syntax), extlinux, systemd-boot,
+  and rEFInd.
+- The Alpine `mdev` profile boots a real musl/busybox rootfs (from the
+  Alpine repositories) with Godel as init: mdev scan, gettys, clean
+  shutdown (`make qemu-alpine`).
+- Other distros (Debian/Ubuntu, Fedora, openSUSE, Gentoo) are
+  capability-detected: run `--dry-run` and inspect every reported
+  capability before trusting it.
 - Bootloaders: **GRUB**, **Limine** (current `limine.conf` and legacy
   `limine.cfg`), **extlinux/syslinux**, **systemd-boot**, and **rEFInd**.
   All backends add a test entry only: the current default remains untouched.
@@ -82,7 +81,7 @@ with `restarts=0`.
 ## Preview without changes
 
 ```sh
-doas sh tools/install.sh --bootloader limine --dry-run
+doas bin/godel-install --bootloader limine --dry-run
 ```
 
 The dry run detects, generates, validates the profile, and prints every
@@ -90,10 +89,9 @@ step it *would* take, changing nothing.
 
 ## Compatibility details
 
-- Backends are small POSIX-shell files implementing `bl_detect`,
-  `bl_backup`, `bl_add_entry`, `bl_finish`, `bl_verify`. This is the same
-  split used by `kernel-install`: entry data is generic; menu syntax belongs
-  to the bootloader.
+- The bootloader phase lives in the same Hare binary: detect, backup,
+  entry, finish, and verify run per bootloader, with the same guarantees
+  the shell plugins used to provide.
 - Limine searches multiple valid config locations and auto-detects current
   colon syntax vs legacy `KERNEL_PATH=` syntax. It leaves `timeout` and
   `default_entry` untouched.

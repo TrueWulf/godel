@@ -13,8 +13,8 @@ A small, static Linux init and service supervisor in Hare.
 Godel is one static, libc-free binary that runs as PID 1 and supervises
 every service on the machine: dependency ordering, restart policies,
 readiness gating, per-service logs, `run-as`, atomic reload, recovery.
-No allocation after boot; ~360 KB stripped; userspace ready in ~10 ms
-on real hardware.
+No allocation after boot; ~360 KB stripped. It runs as the system init
+on the development machine (Artix, GRUB and Limine).
 
 It targets VMs, embedded images, and personal machines on non-systemd
 distributions (Artix, Void, Alpine, Gentoo). It is not a systemd
@@ -67,11 +67,10 @@ doas make install-godel BOOTLOADER=grub   # also: limine, extlinux,
                                           # systemd-boot, refind
 ```
 
-The Hare core (`bin/godel-install`) detects the distro and its
-capabilities, generates the desktop service set, validates it, and
-stages everything; `tools/install.sh` drives it and adds a separate
-**Godel (test)** boot entry — the current default entry is never
-touched. Backups land in `/etc/godel/backups`.
+`bin/godel-install` detects the distro and its capabilities, generates
+the desktop service set, validates it, stages everything, and adds a
+separate **Godel (test)** boot entry — the current default entry is
+never touched. Backups land in `/etc/godel/backups`.
 
 ## Configuration
 

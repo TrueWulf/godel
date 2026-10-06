@@ -70,11 +70,11 @@ other projects are not measured, so their row is qualitative.
 - The tool ecosystem is two binaries. s6's toolkit (three dozen
   utilities), runit's svlogd, and dinit's dinitcheck/dinit-monitor have
   no equivalents here (`godel -t` covers only config validation).
-- Track record: Godel has a handful of real-hardware boots on one
-  machine (Artix, Stage 3 migration in progress, three bugs found and
-  fixed on real hardware so far). It has months-scale real-hardware
-  testing nowhere, no distribution packaging, and no upgrade/rollback
-  story. nitro, runit, s6, and dinit have years of production use.
+- Track record: Godel is the running system init on one machine
+  (Artix, GRUB and Limine), in daily use. It has months-scale
+  real-hardware testing nowhere, no distribution packaging, and no
+  upgrade/rollback story. nitro, runit, s6, and dinit have years of
+  production use.
 
 ## Source size (measured, 2026-09-12)
 

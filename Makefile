@@ -45,17 +45,17 @@ install: bin/godel bin/godelctl
 	install -Dm644 man/godel.8 $(DESTDIR)$(PREFIX)/share/man/man8/godel.8
 	install -Dm644 man/godelctl.8 $(DESTDIR)$(PREFIX)/share/man/man8/godelctl.8
 
-# One-command install for Artix/Arch-family machines with GRUB:
-# builds, installs, generates the desktop-base service set, and adds a
-# separate 'Godel (test)' boot entry; the default entry is not touched.
-# Run as root:  doas make install-artix-grub   (add DRYRUN: --dry-run via
-# sh tools/install.sh directly).
+# One-command install: builds, detects distro and bootloader, generates the
+# desktop-base service set, and adds a separate 'Godel (test)' boot entry;
+# the default entry is not touched.
+# Run as root:  doas make install-godel BOOTLOADER=grub   (add DRYRUN:
+# bin/godel-install --dry-run directly).
 install-godel: all
 	test -n "$(BOOTLOADER)" || { echo "set BOOTLOADER=grub|limine|extlinux|systemd-boot|refind" >&2; exit 2; }
-	sh tools/install.sh --bootloader "$(BOOTLOADER)"
+	bin/godel-install --bootloader "$(BOOTLOADER)"
 
 install-artix-grub: all
-	sh tools/install.sh --bootloader grub
+	bin/godel-install --bootloader grub
 
 image: bin/godel bin/godelctl
 	tools/build-image.sh

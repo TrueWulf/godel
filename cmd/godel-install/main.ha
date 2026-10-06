@@ -764,17 +764,6 @@ fn copy_tree(src: str, dst: str) void = {
 	};
 };
 
-fn write_state(c: *ctx, kernel: str, initrd: str, rootarg: str) void = {
-	const path = os::tryenv("GODEL_STATE", "");
-	let buf = memio::dynamic();
-	defer io::close(&buf)!;
-	fmt::fprintf(&buf, "KERNEL='{}'\n", kernel)!;
-	fmt::fprintf(&buf, "INITRD='{}'\n", initrd)!;
-	fmt::fprintf(&buf, "ROOTARG='{}'\n", rootarg)!;
-	fmt::fprintf(&buf, "STAMP='{}'\n", c.stamp)!;
-	write_file(path, memio::string(&buf)!, 0o600);
-};
-
 fn report(c: *ctx, kernel: str, initrd: str, rootarg: str,
 		mkinit: (void | str)) void = {
 	fmt::println("----------------------------------------------------------")!;
@@ -805,10 +794,38 @@ fn stamp_now() str = {
 	let buf = memio::dynamic();
 	defer io::close(&buf)!;
 	date::format(&buf, "%Y%m%d-%H%M%S", &d)!;
+	const t = time::now(time::clock::REALTIME);
+	fmt::fprintf(&buf, ".{}", t.nsec)!;
 	return strings::concat(memio::string(&buf)!)!;
 };
 
 export fn main() void = {
+	const args = os::args;
+	let bootloader = "";
+	let dryflag = false;
+	let forceflag = false;
+	let i = 1z;
+	for (i < len(args); i += 1) {
+		if (args[i] == "--bootloader") {
+			if (i + 1 >= len(args)) install_usage();
+			bootloader = args[i + 1];
+			i += 1;
+		} else if (args[i] == "--dry-run") {
+			dryflag = true;
+		} else if (args[i] == "--force") {
+			forceflag = true;
+		} else {
+			install_usage();
+		};
+	};
+	if (bootloader == "") install_usage();
+	if (!bootloader_known(bootloader)) {
+		let fbuf: [256]u8 = [0...];
+		dief(fbuf, fmt::bsprintf(fbuf,
+			"unknown bootloader '{}' (available: grub, limine, extlinux, systemd-boot, refind)",
+			bootloader)!);
+	};
+
 	let c = ctx {
 		root = os::tryenv("ROOT", ""),
 		cmdline_file = os::tryenv("CMDLINE_FILE", "/proc/cmdline"),
@@ -816,8 +833,8 @@ export fn main() void = {
 		rootarg = os::tryenv("ROOTARG", ""),
 		rootdev = os::tryenv("ROOTDEV", ""),
 		rootfstype = os::tryenv("ROOTFSTYPE", ""),
-		dryrun = os::tryenv("GODEL_DRYRUN", "") == "1",
-		force = os::tryenv("GODEL_FORCE", "") == "1",
+		dryrun = dryflag || os::tryenv("GODEL_DRYRUN", "") == "1",
+		force = forceflag || os::tryenv("GODEL_FORCE", "") == "1",
 		stamp = os::tryenv("GODEL_STAMP", ""),
 		stage = "",
 		enabled = [],
@@ -825,6 +842,24 @@ export fn main() void = {
 		openrc_extra = [],
 	};
 	if (c.stamp == "") c.stamp = stamp_now();
+
+	if (c.root == "") {
+		os::mkdirs("/etc/godel", 0o755) is void;
+		match (os::create("/etc/godel/.install-probe", 0o644)) {
+		case let f: io::file =>
+			io::close(f)!;
+			os::remove("/etc/godel/.install-probe") is void;
+		case =>
+			die("must run as root (or set ROOT=<fixture> for a test run)");
+		};
+	};
+	{
+		const g = os::stat("bin/godel");
+		const gc = os::stat("bin/godelctl");
+		if (!(g is fs::filestat) || !(gc is fs::filestat)) {
+			die("bin/godel or bin/godelctl missing; run make first");
+		};
+	};
 
 	const release_path = path_of(&c, "/etc/os-release");
 	defer free(release_path);
@@ -987,6 +1022,6 @@ export fn main() void = {
 
 	if (!c.dryrun) commit(&c);
 
-	write_state(&c, c.kernel, initrd, c.rootarg);
 	report(&c, c.kernel, initrd, c.rootarg, mkinit);
+	bootloader_phase(&c, initrd, bootloader);
 };

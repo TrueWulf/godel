@@ -1,5 +1,5 @@
 #!/bin/sh
-# Fixture test for tools/install.sh (no root, no real bootloader):
+# Fixture test for bin/godel-install (no root, no real bootloader):
 #   - dry-run changes nothing and still validates the profile
 #   - a real run installs services that pass `godel -t`
 #   - the 'Godel (test)' entry appears exactly once (idempotent re-run)
@@ -67,7 +67,7 @@ chmod 755 "$fx/fake-mkconfig.sh"
 
 env ROOT="$fx" CMDLINE_FILE="$fx/cmdline" \
 	ROOTDEV=/dev/sda1 ROOTFSTYPE=ext4 GRUB_MKCONFIG="$fx/fake-mkconfig.sh" \
-	sh tools/install.sh --bootloader grub --dry-run > "$fx/dry.log" 2>&1 || {
+	bin/godel-install --bootloader grub --dry-run > "$fx/dry.log" 2>&1 || {
 	cat "$fx/dry.log"
 	echo "test-install: dry-run failed" >&2
 	exit 1
@@ -86,7 +86,7 @@ custom_before=$(md5sum "$fx/etc/grub.d/40_custom" | cut -d' ' -f1)
 
 env ROOT="$fx" CMDLINE_FILE="$fx/cmdline" \
 	ROOTDEV=/dev/sda1 ROOTFSTYPE=ext4 GRUB_MKCONFIG="$fx/fake-mkconfig.sh" \
-	sh tools/install.sh --bootloader grub > "$fx/run.log" 2>&1 || {
+	bin/godel-install --bootloader grub > "$fx/run.log" 2>&1 || {
 	cat "$fx/run.log"
 	echo "test-install: install failed" >&2
 	exit 1
@@ -115,7 +115,7 @@ grep -q "search --no-floppy --fs-uuid --set=root aaaa-bbbb" \
 
 env ROOT="$fx" CMDLINE_FILE="$fx/cmdline" \
 	ROOTDEV=/dev/sda1 ROOTFSTYPE=ext4 GRUB_MKCONFIG="$fx/fake-mkconfig.sh" \
-	sh tools/install.sh --bootloader grub --force > "$fx/rerun.log" 2>&1 || {
+	bin/godel-install --bootloader grub --force > "$fx/rerun.log" 2>&1 || {
 	cat "$fx/rerun.log"
 	echo "test-install: re-run failed" >&2
 	exit 1
@@ -129,7 +129,7 @@ env ROOT="$fx" CMDLINE_FILE="$fx/cmdline" \
 
 # refuse an unknown bootloader instead of guessing
 if env ROOT="$fx" CMDLINE_FILE="$fx/cmdline" \
-	sh tools/install.sh --bootloader limine >/dev/null 2>&1; then
+	bin/godel-install --bootloader limine >/dev/null 2>&1; then
 	echo "test-install: limine should be refused today" >&2
 	exit 1
 fi
