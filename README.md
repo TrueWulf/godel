@@ -88,4 +88,5 @@ Keys: `command`, `after`, `restart`, `restart_limit`, `restart_delay`,
 
 Experimental. Runs on one machine, in daily use; no distribution
 packaging yet. Linux only; prefers pidfds (5.3+) and `cgroup.kill`
-(5.14+), degrades gracefully without them.
+(5.14+), degrades gracefully without them. The linked Hare standard
+library is MPL-2.0 on its own terms.
