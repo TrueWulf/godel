@@ -1,6 +1,6 @@
-# Godel architecture
+# godel architecture
 
-Godel is a static, freestanding (no libc) Hare binary that runs as PID 1.
+godel is a static, freestanding (no libc) Hare binary that runs as PID 1.
 This document describes how the pieces fit together and which kernel
 features each path relies on.
 
@@ -18,7 +18,7 @@ features each path relies on.
   `TIOCSCTTY`, which is what makes serial login work.
 - Preferred supervision is `pidfd_open` (Linux 5.3+): exit notification
   through epoll, no SIGCHLD scanning. When a pidfd cannot be opened or
-  registered, Godel falls back to reaping in the SIGCHLD handler with
+  registered, godel falls back to reaping in the SIGCHLD handler with
   `wait4(WNOHANG)`; supervision continues with coarser timing.
 - PID 1 inherits orphans whose parents died inside a service group. A
   SIGCHLD pass reaps *all* exited children through `wait4(-1)`; statuses
@@ -148,7 +148,7 @@ example — opts out with `log = no` and inherits the console instead.
 
 The honest timestamp answer: the child writes its own bytes directly
 into the log file descriptor, so the supervisor cannot prefix each
-line with a wall-clock time. Godel instead writes a supervisor-side
+line with a wall-clock time. godel instead writes a supervisor-side
 header at every (re)open — `== godel: <name> log opened
 2026-09-12T14:21:05Z` — and everything between two headers is raw,
 untimestamped service output. Rotation is size-based (64 KiB) and
@@ -172,11 +172,11 @@ unprivileged service can still write its log.
 ## Failure paths
 
 - A service that exhausts `restart_limit` enters `gave-up`. When no
-  service remains `up` or in `backoff`, Godel starts a recovery shell on
+  service remains `up` or in `backoff`, godel starts a recovery shell on
   the console exactly once per configuration generation. Exiting the
   shell re-reads the configuration; if it is valid, normal operation
   resumes, otherwise the machine powers off.
-- If all services simply finish (no failures), Godel powers off — a
+- If all services simply finish (no failures), godel powers off — a
   useful property for one-shot boot jobs with no long-running service.
 - `SIGHUP`-reload refusals never disturb running services; the recovery
   shell path and boot path share the same validation.

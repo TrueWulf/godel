@@ -63,5 +63,5 @@ send echo hostname-out-$(hostname)
 expect hostname-out-godel-dir timeout=10
 
 send godelctl poweroff
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect powering off timeout=30

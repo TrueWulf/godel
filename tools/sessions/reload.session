@@ -46,5 +46,5 @@ expect configuration reloaded timeout=15
 
 comment graceful poweroff
 send godelctl poweroff
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect powering off timeout=30

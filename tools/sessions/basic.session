@@ -59,7 +59,7 @@ expect godel# timeout=10
 
 comment graceful poweroff over the godelctl interface
 send godelctl poweroff
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect shutdown deadline in timeout=30
 expect remount-ro ok timeout=30
 expect down in timeout=30

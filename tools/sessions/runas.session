@@ -37,5 +37,5 @@ send cat /tmp/runas-num
 expect 1000 timeout=10
 
 send godelctl poweroff
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect powering off timeout=30

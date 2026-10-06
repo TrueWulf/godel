@@ -10,7 +10,7 @@ A small, static Linux init and service supervisor in Hare.
 
 ---
 
-Godel is one static, libc-free binary that runs as PID 1 and supervises
+godel is one static, libc-free binary that runs as PID 1 and supervises
 every service: dependency ordering, restart policies, readiness gating,
 per-service logs, `run-as`, atomic reload, recovery. No allocation after
 boot; ~360 KB stripped. It is the running system init on the
@@ -62,7 +62,7 @@ doas make install-godel BOOTLOADER=grub
 ```
 
 `bin/godel-install` detects the distro, generates the desktop service
-set, validates it, and adds a separate **Godel (test)** boot entry —
+set, validates it, and adds a separate **godel (test)** boot entry —
 the current default is never touched. Bootloaders: grub, limine,
 extlinux, systemd-boot, refind. Backups land in `/etc/godel/backups`.
 

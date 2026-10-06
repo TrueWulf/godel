@@ -209,7 +209,7 @@ export fn main() void = {
 	ctl_fd = mount_runtime();
 	connect_console();
 	godel::open_file(&logger, strings::toutf8("/run/godel/godel.log"));
-	logf("Godel {}: starting\n", VERSION);
+	logf("godel {}: starting\n", VERSION);
 	let _ = rt::syscall(rt::SYS_reboot, RB_MAGIC, RB_CMD, RB_ENABLE_CAD, 0);
 
 	cg = godel::setup(strings::toutf8("/sys/fs/cgroup"));
@@ -243,7 +243,7 @@ export fn main() void = {
 		const boot_ms = godel::now_ms();
 	load_and_apply();
 	boot_ready_ms = godel::now_ms() - boot_ms;
-	logf("Godel: ready in {} ms; {} service(s) configured\n",
+	logf("godel: ready in {} ms; {} service(s) configured\n",
 		boot_ready_ms, sets[active_set].count);
 
 	let events: [20]rt::epoll_event =
@@ -709,7 +709,7 @@ fn begin_shutdown(mode: shutdown_action) void = {
 		deadline = 0,
 		begin_ms = godel::now_ms(),
 	};
-	logf("Godel: shutting down ({})\n",
+	logf("godel: shutting down ({})\n",
 		if (mode == shutdown_action::reboot) "reboot" else "poweroff");
 	let longest: i64 = 1_000;
 	let running: size = 0;
@@ -1164,9 +1164,9 @@ fn finish_shutdown() never = {
 	persist_shutdown_log();
 	remount_root_ro();
 	const shutdown_ms = godel::now_ms() - shutdown.begin_ms;
-	logf("Godel: down in {} ms (remount-ro {} ms, sync {} ms)\n",
+	logf("godel: down in {} ms (remount-ro {} ms, sync {} ms)\n",
 		shutdown_ms, sync_started - ro_started, sync_ms);
-	logf("Godel: {} now\n",
+	logf("godel: {} now\n",
 		if (shutdown.mode == shutdown_action::reboot) "rebooting"
 		else "powering off");
 	const cmd: u64 = if (shutdown.mode == shutdown_action::reboot)

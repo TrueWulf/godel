@@ -1,9 +1,9 @@
 #!/bin/sh
-# Build a minimal Alpine Linux rootfs with Godel as init, for the
+# Build a minimal Alpine Linux rootfs with godel as init, for the
 # alpine QEMU sessions.
 #
 # What is really being assembled is the musl + busybox userland that
-# Alpine ships. Godel itself is a static, libc-free binary and does
+# Alpine ships. godel itself is a static, libc-free binary and does
 # not care; the generated service set only needs its binaries present
 # (busybox mdev, busybox getty). The Alpine repositories are simply
 # the canonical upstream source for that userland, so the test runs
@@ -99,7 +99,7 @@ for attempt in 1 2 3 4 5; do
 done
 [ "$apk_ok" = 1 ] || { echo "build-alpine: apk bootstrap failed" >&2; exit 1; }
 
-# Godel itself
+# godel itself
 install -m 755 "$root/bin/godel" "$stage/sbin/godel"
 install -m 755 "$root/bin/godelctl" "$stage/bin/godelctl"
 

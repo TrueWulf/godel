@@ -48,5 +48,5 @@ send if [ -f /var/log/godel/consolesvc.log ]; then echo log-exists-bad; else ech
 expect log-absent-ok timeout=10
 
 send godelctl poweroff
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect powering off timeout=30

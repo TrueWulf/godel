@@ -1,6 +1,6 @@
-.TH GODELCTL 8 "2026-09-15" "Godel 0.9.1" "System Administration"
+.TH GODELCTL 8 "2026-09-15" "godel 0.9.1" "System Administration"
 .SH NAME
-godelctl \- control a running Godel supervisor
+godelctl \- control a running godel supervisor
 .SH SYNOPSIS
 .B godelctl
 .B status
@@ -31,7 +31,7 @@ godelctl \- control a running Godel supervisor
 .B \-\-version
 .SH DESCRIPTION
 .B godelctl
-talks to a running Godel supervisor (PID 1) through
+talks to a running godel supervisor (PID 1) through
 .IR /run/godel/ .
 Every command that would signal PID 1 refuses to run when
 .I /run/godel/status
@@ -89,7 +89,7 @@ Print the version and exit.
 .SH FILES
 .TP
 .I /run/godel/status
-Read: status snapshot; its presence identifies a Godel boot.
+Read: status snapshot; its presence identifies a godel boot.
 .TP
 .I /run/godel/ctl
 Written: textual commands, one per line.

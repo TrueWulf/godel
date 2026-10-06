@@ -1,4 +1,4 @@
-# Next Session: Godel 0.9.5.1 — metal checks, release, trim + udev settle
+# Next Session: godel 0.9.5.1 — metal checks, release, trim + udev settle
 
 ## Language rule
 
@@ -46,9 +46,9 @@ documentation stay in English.
     removed; 250 ms kill fallback kept for unkillable processes).
     QEMU: down in 2.2 s with an interactive getty shell (was 5.2 s);
     259-service image powers off in 2.4 s.
-  - console timeline: `Godel: boot complete in N ms` when the last
+  - console timeline: `godel: boot complete in N ms` when the last
     dependency chain settles, `stopping N running service(s)`,
-    per-service SIGKILL lines, `Godel: down in N ms (remount-ro, sync)`.
+    per-service SIGKILL lines, `godel: down in N ms (remount-ro, sync)`.
     basic/reboot/stubborn-hang session greps updated to the new texts.
   - BUF_CAPACITY 32 KiB -> 256 KiB (config text is the practical
     ceiling; content buffer moved to heap in load_from).

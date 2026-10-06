@@ -8,9 +8,9 @@ comment corrupt the boot configuration and reboot into it
 send echo this-is-not-a-valid-config > /etc/godel/services.conf; sync
 expect godel# timeout=10
 send godelctl reboot
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 
-comment Godel must enter the recovery shell instead of a boot loop
+comment godel must enter the recovery shell instead of a boot loop
 expect entering recovery timeout=90
 send echo rescue-check-$(echo ok)
 expect rescue-check-ok timeout=15
@@ -38,5 +38,5 @@ expect godel# timeout=10
 
 comment graceful poweroff
 send godelctl poweroff
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect powering off timeout=30

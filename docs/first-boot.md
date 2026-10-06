@@ -1,6 +1,6 @@
 # First boot with the QEMU test image
 
-This guide builds a small bootable disk image and drives Godel as PID 1
+This guide builds a small bootable disk image and drives godel as PID 1
 under QEMU. Nothing outside the repository's `.image/` directory is
 written; the host system, bootloader, and `/boot` are never touched.
 
@@ -31,19 +31,19 @@ APPEND="console=ttyS0,115200 root=/dev/vda ro init=/sbin/godel" tools/run-system
 
 ## Log in
 
-The serial console shows the Godel boot log and then a getty prompt:
+The serial console shows the godel boot log and then a getty prompt:
 
 ```
-Godel 0.9.0: starting
+godel 0.9.5: starting
 godel: cgroup v2 enabled
 ...
-Godel test image godel-vm on /dev/ttyS0
+godel test image godel-vm on /dev/ttyS0
 
 godel-vm login:
 ```
 
 Log in as `root` with password `godel`. Both are test-image credentials
-defined by `tools/build-rootfs.sh`; they are not defaults of Godel
+defined by `tools/build-rootfs.sh`; they are not defaults of godel
 itself.
 
 ## Drive the system
@@ -84,9 +84,9 @@ its `EXT4-fs (vda): recovery` line on the console after an unclean
 shutdown.
 
 The image deliberately does not install busybox `reboot`, `poweroff`, or
-`halt` applets: their signal conventions differ from Godel's. Use
+`halt` applets: their signal conventions differ from godel's. Use
 `godelctl`. If every service is gone and the configuration is broken,
-Godel starts a recovery shell on the console; repair
+godel starts a recovery shell on the console; repair
 `/etc/godel/services.conf` there and type `exit` to resume booting.
 
 ## Scripted sessions and soak runs

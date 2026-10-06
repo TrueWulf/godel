@@ -375,7 +375,7 @@ fn pump_starts() void = {
 	};
 	if (!boot_announced && all_pending_launched()) {
 		boot_announced = true;
-		logf("Godel: boot complete in {} ms; {} service(s) up\n",
+		logf("godel: boot complete in {} ms; {} service(s) up\n",
 			godel::now_ms() - boot_ready_ms,
 			sets[active_set].count: i64);
 	};

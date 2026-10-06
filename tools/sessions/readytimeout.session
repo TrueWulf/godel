@@ -32,5 +32,5 @@ send echo mute-state-$(awk '$1=="mute"{print $2}' /run/godel/status)
 expect mute-state-stopped timeout=10
 
 send godelctl poweroff
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect powering off timeout=30

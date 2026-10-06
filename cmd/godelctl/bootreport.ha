@@ -68,7 +68,7 @@ fn tail_num(line: []u8, marker: str, tail: str) (void | i64) = {
 
 fn is_starting(line: []u8) bool = {
 	const tail = strings::toutf8(" starting");
-	if (!has_prefix(line, "Godel ")) return false;
+	if (!has_prefix(line, "godel ")) return false;
 	if (len(line) < 8 || line[6] < '0' || line[6] > '9') return false;
 	if (!bytes::hassuffix(line, tail)) return false;
 	for (let i = 6z; i < len(line) - len(tail); i += 1) {
@@ -78,8 +78,8 @@ fn is_starting(line: []u8) bool = {
 };
 
 fn is_ready_line(line: []u8) bool = {
-	const head = strings::toutf8("Godel: ready in ");
-	if (!has_prefix(line, "Godel: ready in ")) return false;
+	const head = strings::toutf8("godel: ready in ");
+	if (!has_prefix(line, "godel: ready in ")) return false;
 	let i = len(head);
 	const d0 = i;
 	for (i < len(line) && line[i] >= '0' && line[i] <= '9'; i += 1) {
@@ -148,8 +148,8 @@ fn clean_exit(line: []u8) (void | (str, i64)) = {
 };
 
 fn shutdown_mode(line: []u8) (void | str) = {
-	const head = strings::toutf8("Godel: shutting down (");
-	if (!has_prefix(line, "Godel: shutting down (")) return;
+	const head = strings::toutf8("godel: shutting down (");
+	if (!has_prefix(line, "godel: shutting down (")) return;
 	if (len(line) == 0 || line[len(line) - 1] != ')') return;
 	const inner = line[len(head)..len(line) - 1];
 	if (len(inner) == 0) return;
@@ -384,9 +384,9 @@ fn run_boot_report(path: str) int = {
 		};
 		};
 		if (consumed) continue;
-		if (bytes::equal(rest, strings::toutf8("Godel: rebooting now"))
+		if (bytes::equal(rest, strings::toutf8("godel: rebooting now"))
 				|| bytes::equal(rest,
-					strings::toutf8("Godel: powering off now"))) {
+					strings::toutf8("godel: powering off now"))) {
 			rep.sd_end = t;
 		};
 	};

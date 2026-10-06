@@ -85,10 +85,10 @@ cp "$root/tools/rootfs/issue" "$stage/etc/issue"
 cp "$root/tools/rootfs/motd" "$stage/etc/motd"
 cp "$root/tools/rootfs/profile" "$stage/etc/profile"
 cat > "$stage/etc/os-release" <<EOF
-NAME="Godel test image"
+NAME="godel test image"
 ID=godel-test
 VERSION="$bbver"
-PRETTY_NAME="Godel test image (busybox $bbver)"
+PRETTY_NAME="godel test image (busybox $bbver)"
 EOF
 
 echo "rootfs ready at $stage"

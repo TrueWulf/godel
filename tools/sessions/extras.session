@@ -31,5 +31,5 @@ send umount /var && fsck.ext4 -p /dev/vdc && mount /dev/vdc /var && echo var-fsc
 expect var-fsck-clean timeout=15
 
 send godelctl poweroff
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect powering off timeout=30

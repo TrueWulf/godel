@@ -119,7 +119,7 @@ fn print_log(name: str) int = {
 };
 
 // Reads the status snapshot into buf; returns the number of bytes read,
-// 0 when Godel is not running. No allocation, mirroring the supervisor.
+// 0 when godel is not running. No allocation, mirroring the supervisor.
 fn read_status(buf: []u8) size = {
 	const f = match (os::open("/run/godel/status")) {
 	case let f: io::file => yield f;
@@ -270,7 +270,7 @@ export fn main() void = {
 	};
 	if (len(args) == 3 && args[1] == "catlog") {
 		if (!running_under_godel()) {
-			fmt::errorln("godelctl: Godel is not running")!;
+			fmt::errorln("godelctl: godel is not running")!;
 			os::exit(1);
 		};
 		if (!known_service(args[2])) {
@@ -281,7 +281,7 @@ export fn main() void = {
 	};
 	if (len(args) == 3 && (args[1] == "start" || args[1] == "stop")) {
 		if (!running_under_godel()) {
-			fmt::errorln("godelctl: Godel is not running (no /run/godel/status); refusing to signal PID 1")!;
+			fmt::errorln("godelctl: godel is not running (no /run/godel/status); refusing to signal PID 1")!;
 			os::exit(1);
 		};
 		if (!known_service(args[2])) {
@@ -295,7 +295,7 @@ export fn main() void = {
 		os::exit(1);
 	};
 	if (!running_under_godel()) {
-		fmt::errorln("godelctl: Godel is not running (no /run/godel/status); refusing to signal PID 1")!;
+		fmt::errorln("godelctl: godel is not running (no /run/godel/status); refusing to signal PID 1")!;
 		os::exit(1);
 	};
 	const sig = match (signal_for(args[1])) {

@@ -27,11 +27,11 @@ expect godel-alpine:~# timeout=10
 
 comment the first supervisor line carries the T+ stamp format
 send head -1 /run/godel/godel.log
-expect ms] Godel timeout=10
+expect ms] godel timeout=10
 expect godel-alpine:~# timeout=10
 
 comment graceful poweroff with the new shutdown timing lines
 send godelctl poweroff
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect remount-ro took timeout=30
 expect powering off timeout=30

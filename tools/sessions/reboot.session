@@ -8,7 +8,7 @@ expect godel#
 send echo marker-before-reboot > /root/marker.txt; sync
 expect godel# timeout=10
 send godelctl reboot
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect rebooting timeout=30
 
 comment the next login prompt belongs to a fresh boot
@@ -25,6 +25,6 @@ expect marker-before-reboot timeout=10
 
 comment graceful poweroff
 send godelctl poweroff
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect down in timeout=30
 expect powering off timeout=30

@@ -1,4 +1,4 @@
-# Installing Godel
+# Installing godel
 
 One command, a detected bootloader, and a separate boot entry. You never
 write service sets by hand: the installer detects what is available and
@@ -6,14 +6,14 @@ generates them.
 
 ## Supported today
 
-Godel runs as the system init on the development machine (Artix, GRUB
+godel runs as the system init on the development machine (Artix, GRUB
 and Limine). Verified every change:
 
 - The installer compatibility matrix covers Void and Alpine fixtures
   over GRUB, Limine (current and legacy syntax), extlinux, systemd-boot,
   and rEFInd.
 - The Alpine `mdev` profile boots a real musl/busybox rootfs (from the
-  Alpine repositories) with Godel as init: mdev scan, gettys, clean
+  Alpine repositories) with godel as init: mdev scan, gettys, clean
   shutdown (`make qemu-alpine`).
 - Other distros (Debian/Ubuntu, Fedora, openSUSE, Gentoo) are
   capability-detected: run `--dry-run` and inspect every reported
@@ -55,19 +55,19 @@ What it does, in order:
 4. Installs `godel`, `godelctl`, and the man pages under
    `/usr/local`.
 5. Backs up every file it changes into `/etc/godel/backups/`.
-6. Adds a separate **`Godel (test)`** entry using the selected bootloader
+6. Adds a separate **`godel (test)`** entry using the selected bootloader
    backend. The default selection (`GRUB_DEFAULT`, Limine `default_entry`,
    extlinux `DEFAULT`, systemd-boot `loader.conf`, rEFInd
    `default_selection`) is never modified.
 
-Then reboot and pick `Godel (test)` in the menu. Log in on tty1 and run
+Then reboot and pick `godel (test)` in the menu. Log in on tty1 and run
 `godelctl list`; every service should show `up` or a completed oneshot
 with `restarts=0`.
 
 ## Safety model
 
 - The entry is additive and separate. Your current init keeps booting
-  until you explicitly choose `Godel (test)` in the boot menu.
+  until you explicitly choose `godel (test)` in the boot menu.
 - Rollback: remove the `# >>> godel begin` … `# <<< godel end` block from
   the selected bootloader config. GRUB additionally needs
   `grub-mkconfig -o /boot/grub/grub.cfg`; Limine, extlinux, and rEFInd read
@@ -118,7 +118,7 @@ step it *would* take, changing nothing.
 ### `reboot` / `shutdown` say "connect: No such file or directory"
 
 The util-linux `reboot` and `shutdown` binaries try to talk to systemd
-(logind's private socket), which Godel does not provide by design. Use
+(logind's private socket), which godel does not provide by design. Use
 the supervisor's own control path instead:
 
 ```sh
@@ -127,7 +127,7 @@ doas godelctl poweroff
 ```
 
 Do **not** use `reboot -f`: it triggers the reboot syscall directly,
-bypassing Godel's clean-shutdown path (services stopped, filesystems
+bypassing godel's clean-shutdown path (services stopped, filesystems
 remounted read-only, sync). That is how dirty ext4 journals and fsck
 prompts come back.
 
@@ -143,13 +143,13 @@ They assert:
 - the generated service set passes `godel -t`;
 - the entry appears exactly once, even after a re-run;
 - every existing bootloader default is byte-identical before and after;
-- a re-run leaves exactly one Godel entry.
+- a re-run leaves exactly one godel entry.
 
 ## The Alpine QEMU session
 
 `doas make qemu-alpine` assembles a disposable musl + busybox rootfs
 with `tools/build-alpine.sh` (apk.static against the Alpine
-repositories; network required) and boots it in QEMU with Godel as
+repositories; network required) and boots it in QEMU with godel as
 init. The session verifies the mdev scan, the kernel-dependent hotplug
 helper report, gettys, the `[T+Nms]` supervisor stamps, and a clean
 timed poweroff — the Alpine profile exercised against real musl

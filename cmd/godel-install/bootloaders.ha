@@ -272,14 +272,14 @@ fn bl_grub(c: *ctx, initrd: str) void = {
 	};
 
 	if (c.dryrun) {
-		bl_dry(c, "add 'Godel (test)' to the grub custom menu");
+		bl_dry(c, "add 'godel (test)' to the grub custom menu");
 		return;
 	};
 
 	let b = memio::dynamic();
 	defer io::close(&b)!;
 	fmt::fprintln(&b, BL_BEGIN)!;
-	fmt::fprintln(&b, "menuentry 'Godel (test)' --class godel --id gnulinux-godel-test {")!;
+	fmt::fprintln(&b, "menuentry 'godel (test)' --class godel --id gnulinux-godel-test {")!;
 	fmt::fprintln(&b, "\tload_video")!;
 	fmt::fprintln(&b, "\tinsmod gzio")!;
 	fmt::fprintln(&b, "\tinsmod part_msdos")!;
@@ -293,7 +293,7 @@ fn bl_grub(c: *ctx, initrd: str) void = {
 	if (uuid != "") {
 		bl_put(&b, "\tsearch --no-floppy --fs-uuid --set=root {}", uuid)!;
 	};
-	bl_put(&b, "\techo\t'Loading {} with Godel as init ...'",
+	bl_put(&b, "\techo\t'Loading {} with godel as init ...'",
 		bl_basename(c.kernel))!;
 	bl_put(&b, "\tlinux\t{} root={} ro init=/usr/local/sbin/godel",
 		krel, c.rootarg)!;
@@ -306,14 +306,14 @@ fn bl_grub(c: *ctx, initrd: str) void = {
 
 	bl_run_or_die(c, mk, "-o", grubcfg);
 
-	const n = bl_count_lines(grubcfg, "menuentry 'Godel (test)'");
+	const n = bl_count_lines(grubcfg, "menuentry 'godel (test)'");
 	if (n != 1) {
 		let fbuf: [256]u8 = [0...];
 		dief(fbuf, fmt::bsprintf(fbuf,
-			"expected exactly 1 'Godel (test)' entry in grub.cfg, found {}",
+			"expected exactly 1 'godel (test)' entry in grub.cfg, found {}",
 			n)!);
 	};
-	info("verified: 1 'Godel (test)' entry in grub.cfg");
+	info("verified: 1 'godel (test)' entry in grub.cfg");
 };
 
 fn bl_run_or_die(c: *ctx, cmd: str, args: str...) void = {
@@ -372,7 +372,7 @@ fn bl_limine(c: *ctx, initrd: str) void = {
 	const (kpath, ipath) = bl_adjust_paths(conf_rel, c, initrd, "Limine");
 
 	if (c.dryrun) {
-		bl_dry(c, "add 'Godel (test)' to the Limine config");
+		bl_dry(c, "add 'godel (test)' to the Limine config");
 		return;
 	};
 
@@ -380,7 +380,7 @@ fn bl_limine(c: *ctx, initrd: str) void = {
 	defer io::close(&b)!;
 	fmt::fprintln(&b, BL_BEGIN)!;
 	if (legacy) {
-		fmt::fprintln(&b, "/Godel (test)")!;
+		fmt::fprintln(&b, "/godel (test)")!;
 		fmt::fprintln(&b, "PROTOCOL=linux")!;
 		bl_put(&b, "KERNEL_PATH=boot():{}", kpath)!;
 		bl_put(&b, "MODULE_PATH=boot():{}", ipath)!;
@@ -388,7 +388,7 @@ fn bl_limine(c: *ctx, initrd: str) void = {
 			"KERNEL_CMDLINE=root={} ro init=/usr/local/sbin/godel",
 			c.rootarg)!;
 	} else {
-		fmt::fprintln(&b, "/Godel (test)")!;
+		fmt::fprintln(&b, "/godel (test)")!;
 		fmt::fprintln(&b, "    protocol: linux")!;
 		bl_put(&b, "    path: boot():{}", kpath)!;
 		bl_put(&b, "    module_path: boot():{}", ipath)!;
@@ -399,10 +399,10 @@ fn bl_limine(c: *ctx, initrd: str) void = {
 	bl_rewrite(conf, memio::string(&b)!, 0o644);
 	info("entry appended to the Limine config");
 
-	if (!bl_has_line(conf, "/Godel (test)")) {
-		die("Godel entry missing from the Limine config");
+	if (!bl_has_line(conf, "/godel (test)")) {
+		die("godel entry missing from the Limine config");
 	};
-	info("verified: 'Godel (test)' in the Limine config");
+	info("verified: 'godel (test)' in the Limine config");
 };
 
 const extlinux_paths: []str = [
@@ -422,7 +422,7 @@ fn bl_extlinux(c: *ctx, initrd: str) void = {
 	bl_backup(c, conf, "extlinux.conf.bak");
 
 	if (c.dryrun) {
-		bl_dry(c, "add 'Godel (test)' to the extlinux config");
+		bl_dry(c, "add 'godel (test)' to the extlinux config");
 		return;
 	};
 
@@ -430,7 +430,7 @@ fn bl_extlinux(c: *ctx, initrd: str) void = {
 	defer io::close(&b)!;
 	fmt::fprintln(&b, BL_BEGIN)!;
 	fmt::fprintln(&b, "LABEL godel-test")!;
-	fmt::fprintln(&b, "  MENU LABEL Godel (test)")!;
+	fmt::fprintln(&b, "  MENU LABEL godel (test)")!;
 	bl_put(&b, "  LINUX {}", c.kernel)!;
 	bl_put(&b, "  INITRD {}", initrd)!;
 	bl_put(&b, "  APPEND root={} ro init=/usr/local/sbin/godel",
@@ -440,7 +440,7 @@ fn bl_extlinux(c: *ctx, initrd: str) void = {
 	info("entry appended to the extlinux config");
 
 	if (!bl_has_line(conf, "LABEL godel-test")) {
-		die("Godel entry missing from the extlinux config");
+		die("godel entry missing from the extlinux config");
 	};
 	info("verified: LABEL godel-test in the extlinux config");
 };
@@ -487,7 +487,7 @@ fn bl_systemd_boot(c: *ctx, initrd: str) void = {
 
 	let b = memio::dynamic();
 	defer io::close(&b)!;
-	fmt::fprintln(&b, "title   Godel (test)")!;
+	fmt::fprintln(&b, "title   godel (test)")!;
 	bl_put(&b, "linux   {}", kpath)!;
 	bl_put(&b, "initrd  {}", ipath)!;
 	bl_put(&b, "options root={} ro init=/usr/local/sbin/godel",
@@ -495,8 +495,8 @@ fn bl_systemd_boot(c: *ctx, initrd: str) void = {
 	write_file(entry, memio::string(&b)!, 0o644);
 	info("entry written for systemd-boot");
 
-	if (!bl_has_line(entry, "title   Godel (test)")) {
-		die("Godel entry missing from the systemd-boot entry");
+	if (!bl_has_line(entry, "title   godel (test)")) {
+		die("godel entry missing from the systemd-boot entry");
 	};
 	info("verified: systemd-boot entry");
 };
@@ -520,14 +520,14 @@ fn bl_refind(c: *ctx, initrd: str) void = {
 	const (kpath, ipath) = bl_adjust_paths(conf_rel, c, initrd, "rEFInd");
 
 	if (c.dryrun) {
-		bl_dry(c, "add 'Godel (test)' to the rEFInd config");
+		bl_dry(c, "add 'godel (test)' to the rEFInd config");
 		return;
 	};
 
 	let b = memio::dynamic();
 	defer io::close(&b)!;
 	fmt::fprintln(&b, BL_BEGIN)!;
-	fmt::fprintln(&b, "menuentry \"Godel (test)\" {")!;
+	fmt::fprintln(&b, "menuentry \"godel (test)\" {")!;
 	bl_put(&b, "    loader {}", kpath)!;
 	bl_put(&b, "    initrd {}", ipath)!;
 	bl_put(&b, "    options \"root={} ro init=/usr/local/sbin/godel\"",
@@ -537,8 +537,8 @@ fn bl_refind(c: *ctx, initrd: str) void = {
 	bl_rewrite(conf, memio::string(&b)!, 0o644);
 	info("entry appended to the rEFInd config");
 
-	if (!bl_has_line(conf, "menuentry \"Godel (test)\" {")) {
-		die("Godel entry missing from the rEFInd config");
+	if (!bl_has_line(conf, "menuentry \"godel (test)\" {")) {
+		die("godel entry missing from the rEFInd config");
 	};
-	info("verified: 'Godel (test)' in the rEFInd config");
+	info("verified: 'godel (test)' in the rEFInd config");
 };

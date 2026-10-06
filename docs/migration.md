@@ -1,9 +1,9 @@
-# Migrating an existing system to Godel
+# Migrating an existing system to godel
 
 This runbook describes how to move a real Artix Linux installation from
-its current init (dinit, OpenRC, runit, or s6) to Godel without risking
-the machine. It assumes Godel 0.9.0 or newer. The rule throughout: the
-existing init stays the default until Godel has proven itself, and no
+its current init (dinit, OpenRC, runit, or s6) to godel without risking
+the machine. It assumes godel 0.9.0 or newer. The rule throughout: the
+existing init stays the default until godel has proven itself, and no
 existing bootloader entry is ever modified.
 
 ## Why the QEMU record is not enough
@@ -40,12 +40,12 @@ Plan for all seven before calling anything production-ready.
 
 ## Stage 1: write the service set
 
-Godel mounts procfs, sysfs, devtmpfs, cgroup v2, and `/run` itself.
+godel mounts procfs, sysfs, devtmpfs, cgroup v2, and `/run` itself.
 Everything else is services in `/etc/godel/services.d/`. The honest
 way to build this list is to copy the *checklist*, not the code: read
 the service directories of the init already on the machine (for Artix:
 `/etc/dinit.d`, `/etc/runit/sv`, `/etc/openrc/runlevels`, or the s6
-bundle) and write one Godel stanza per daemon, pointing at the same
+bundle) and write one godel stanza per daemon, pointing at the same
 binaries. Typical Artix set:
 
 - oneshots: `sysctl`, `hostname`, `swapon`, `seedrng`/`urandom-seed`
@@ -83,7 +83,7 @@ cannot signal must not declare `notification-fd`.
    users.
 3. Only when the cloned-disk boot reaches login and every service is
    `up` (or deliberately `stopped`) is the machine allowed to boot
-   Godel once.
+   godel once.
 
 ## Stage 3: first real boot
 
@@ -93,7 +93,7 @@ cannot signal must not declare `notification-fd`.
 2. Expected first-boot failures: a daemon that backgrounded anyway, a
    missing foreground flag, a service ordering mistake. Each one is a
    configuration fix, then reboot into the old init and iterate.
-3. Leave the old init as the default. Boot Godel deliberately, daily,
+3. Leave the old init as the default. Boot godel deliberately, daily,
    by hand.
 
 ## Stage 4: soak and flip
@@ -102,7 +102,7 @@ cannot signal must not declare `notification-fd`.
   `/var/log/godel/` skimmed after every suspend/resume and power event.
 - Record every deviation. A bug that loses data or locks the boot is a
   0.9.x blocker; the default entry does not change until none remain.
-- Only after the runbook's quiet weeks: make the Godel entry the
+- Only after the runbook's quiet weeks: make the godel entry the
   default, keep the old init entry forever as the recovery path.
 
 ## What to honestly expect
@@ -110,8 +110,8 @@ cannot signal must not declare `notification-fd`.
 - The service set will take several boot iterations; that is normal.
 - `udevd` and `elogind` are the likely hard cases.
 - Anything that depends on systemd units, D-Bus activation, or socket
-  activation does not exist under Godel and needs its daemon started
+  activation does not exist under godel and needs its daemon started
   directly or is out of scope.
-- The 0.9.0 limits (64 services, one service per `services.d` file,
-  single group under `run-as`, no socket activation) are the next real
-  constraint to watch on a desktop set.
+- Remaining per-service limits: one service per `services.d` file,
+  single group under `run-as`, 8 argv entries, no socket activation.
+  Watch these on a desktop set.

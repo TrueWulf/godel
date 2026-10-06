@@ -2,7 +2,7 @@
 # Fixture test for bin/godel-install (no root, no real bootloader):
 #   - dry-run changes nothing and still validates the profile
 #   - a real run installs services that pass `godel -t`
-#   - the 'Godel (test)' entry appears exactly once (idempotent re-run)
+#   - the 'godel (test)' entry appears exactly once (idempotent re-run)
 #   - /etc/default/grub (the default boot selection) is never touched
 set -eu
 
@@ -59,7 +59,7 @@ cat > "$fx/fake-mkconfig.sh" <<'EOF'
 {
 	echo "### BEGIN fake grub-mkconfig ###"
 	echo "menuentry 'Artix Linux' --id gnulinux-arch { }"
-	echo "menuentry 'Godel (test)' --class godel --id gnulinux-godel-test { }"
+	echo "menuentry 'godel (test)' --class godel --id gnulinux-godel-test { }"
 	echo "### END fake grub-mkconfig ###"
 } > "$2"
 EOF
@@ -103,12 +103,12 @@ bin/godel -t "$fx/etc/godel/services.d" ||
 grep -q "swap-fstab" "$fx/etc/godel/services.d/swap-fstab.conf" ||
 	{ echo "test-install: swap service missing" >&2; exit 1; }
 
-[ "$(grep -c "menuentry 'Godel (test)'" "$fx/etc/grub.d/40_custom")" = 1 ] ||
+[ "$(grep -c "menuentry 'godel (test)'" "$fx/etc/grub.d/40_custom")" = 1 ] ||
 	{ echo "test-install: expected 1 entry in 40_custom" >&2; exit 1; }
 grep -q "search --no-floppy --fs-uuid --set=root aaaa-bbbb" \
 	"$fx/etc/grub.d/40_custom" ||
 	{ echo "test-install: grub search line missing" >&2; exit 1; }
-[ "$(grep -c "menuentry 'Godel (test)'" "$fx/boot/grub/grub.cfg")" = 1 ] ||
+[ "$(grep -c "menuentry 'godel (test)'" "$fx/boot/grub/grub.cfg")" = 1 ] ||
 	{ echo "test-install: entry missing from regenerated menu" >&2; exit 1; }
 [ "$(md5sum "$fx/etc/default/grub" | cut -d' ' -f1)" = "$default_before" ] ||
 	{ echo "test-install: /etc/default/grub was modified" >&2; exit 1; }
@@ -120,7 +120,7 @@ env ROOT="$fx" CMDLINE_FILE="$fx/cmdline" \
 	echo "test-install: re-run failed" >&2
 	exit 1
 }
-[ "$(grep -c "menuentry 'Godel (test)'" "$fx/etc/grub.d/40_custom")" = 1 ] ||
+[ "$(grep -c "menuentry 'godel (test)'" "$fx/etc/grub.d/40_custom")" = 1 ] ||
 	{ echo "test-install: re-run duplicated the entry" >&2; exit 1; }
 [ "$(md5sum "$fx/etc/default/grub" | cut -d' ' -f1)" = "$default_before" ] ||
 	{ echo "test-install: re-run modified /etc/default/grub" >&2; exit 1; }

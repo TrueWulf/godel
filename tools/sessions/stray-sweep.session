@@ -7,7 +7,7 @@ expect godel#
 comment Session managers (elogind scopes) move user processes out of
 comment the supervisor tree. Simulate one properly: a detached
 comment setsid process with stdio away from the tty, parked in a
-comment top-level cgroup Godel does not supervise. The inner shell
+comment top-level cgroup godel does not supervise. The inner shell
 comment registers its own pid because busybox setsid forks. cgroupfs
 comment seq_files hang when read back while a member lives, so the
 comment check goes through ps, not through cgroup.procs.

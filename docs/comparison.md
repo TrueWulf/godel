@@ -1,20 +1,20 @@
-# Godel compared with other supervisors
+# godel compared with other supervisors
 
-This note exists to keep claims about Godel checkable. Versions compared:
-Godel 0.9.0, nitro 0.8.1, runit 2.2.0, s6 2.13.x (with s6-rc 0.5.x),
+This note exists to keep claims about godel checkable. Versions compared:
+godel 0.9.5.3, nitro 0.8.1, runit 2.2.0, s6 2.13.x (with s6-rc 0.5.x),
 dinit 0.23.0. Everything below describes the core upstream tools, not
-distribution add-ons. Binary sizes are measured here only for Godel;
+distribution add-ons. Binary sizes are measured here only for godel;
 other projects are not measured, so their row is qualitative.
 
 ## Feature table
 
-| | Godel | nitro | runit | s6 (+s6-rc) | dinit |
+| | godel | nitro | runit | s6 (+s6-rc) | dinit |
 |---|---|---|---|---|---|
 | Language | Hare | C | C | C | C++ |
 | License | BSD-2-Clause | 0BSD | BSD-3-Clause | ISC | Apache-2.0 |
 | Static no-libc binary | yes | musl builds | musl builds | optional (libc) | no (libc) |
-| Config model | one INI-like file + `services.d/` directory, fixed limits | directory of scripts | directory of scripts | directory + compiled s6-rc DB | per-service description files |
-| Service limit | 64, fixed storage | unbounded | unbounded | unbounded | unbounded |
+| Config model | one INI-like file + `services.d/` directory | directory of scripts | directory of scripts | directory + compiled s6-rc DB | per-service description files |
+| Service limit | dynamic, scales with the configuration at boot | unbounded | unbounded | unbounded | unbounded |
 | Config validation tool | `godel -t` with line diagnostics | no | no | s6-rc compile-time checks | `dinitcheck` |
 | Dependency ordering | `after`, start order | none built in (use `SYS/setup`) | none built in | s6-rc graph, compiled | full graph, parallel, rollback |
 | Readiness protocol | `notification-fd` (s6/dinit/nitro compatible), optional timeout | `notification-fd` | none | `notification-fd` | `ready-notification` (pipe or sd_notify) |
@@ -30,11 +30,11 @@ other projects are not measured, so their row is qualitative.
 | Timers/cron | no | no (snooze suggested) | no | no | no |
 | PID 1 platforms | Linux only | Linux, NetBSD | Linux | Linux, BSDs | Linux, OpenBSD, more |
 
-## Where Godel genuinely differs
+## Where godel genuinely differs
 
 - The whole supervisor is one freestanding Hare binary with no heap
   allocation at runtime and a fixed-memory configuration snapshot; the
-  PID 1 binary stripped is 360,656 bytes (self-measured, x86-64,
+  PID 1 binary stripped is 385664 bytes (self-measured, x86-64,
   `hare build` output, `strip`).
 - `cgroup.kill` per service gives orphan-grandchild cleanup that none of
   the four others do in their core.
@@ -48,12 +48,12 @@ other projects are not measured, so their row is qualitative.
   the whole configuration on any error; `godel -t` checks the same set
   without booting.
 
-## Where Godel falls short (read this before choosing it)
+## Where godel falls short (read this before choosing it)
 
-- Hard limits: 64 services, 8 argv entries, 4 env entries, 4 `after`
-  references, 31-byte names, and one service per `services.d` file.
-  Fixed storage keeps the supervisor auditable but small; a desktop set
-  with many templated units may not fit.
+- Per-service limits: 8 argv entries, 4 env entries, 4 `after`
+  references, 31-byte names, 256 config files, and one service per
+  `services.d` file. Service count itself is dynamic and scales with
+  the configuration at boot.
 - Per-service identity is one uid:gid with no supplementary groups, no
   PAM, no chroot, and no namespaces. nitro, runit, s6, and dinit all
   delegate or implement more complete privilege dropping.
@@ -70,7 +70,7 @@ other projects are not measured, so their row is qualitative.
 - The tool ecosystem is two binaries. s6's toolkit (three dozen
   utilities), runit's svlogd, and dinit's dinitcheck/dinit-monitor have
   no equivalents here (`godel -t` covers only config validation).
-- Track record: Godel is the running system init on one machine
+- Track record: godel is the running system init on one machine
   (Artix, GRUB and Limine), in daily use. It has months-scale
   real-hardware testing nowhere, no distribution packaging, and no
   upgrade/rollback story. nitro, runit, s6, and dinit have years of
@@ -80,27 +80,27 @@ other projects are not measured, so their row is qualitative.
 
 | | lines |
 |---|---:|
-| Godel PID 1 (`cmd/godel` + `godel/`, incl. tests) | 3657 |
-| Godel `godelctl` | 56 |
+| godel PID 1 (`cmd/godel` + `godel/`, incl. tests) | 3657 |
+| godel `godelctl` | 56 |
 | nitro `nitro.c` (master, ~0.8.x) | 2163 |
 | nitro `nitroctl.c` | 842 |
 
 The line counts say less than they appear to: nitro ships more features
 (user sessions, log chains, parametrized services, Unix-socket control)
-in fewer lines, while Godel's count includes its test suite.
+in fewer lines, while godel's count includes its test suite.
 
 ## Statement of intent
 
-Godel is an experiment in a small, auditable PID 1 for VMs, embedded
+godel is an experiment in a small, auditable PID 1 for VMs, embedded
 images, and personal machines. It does not replace systemd, and at this
 point it does not replace nitro, runit, s6, or dinit either; each of
 those is more capable, more portable, and far better tested. The
-comparison above exists so that anyone evaluating Godel can see both
+comparison above exists so that anyone evaluating godel can see both
 sides without marketing.
 
 The size budget is policy, not accident: the supervisor stays around
 three thousand lines of Hare (tests included in the count above).
 Everything that would push it past that budget — user sessions, log
 pipelines, socket or timer activation, templated services — belongs to
-external tools or other inits, in the Unix way: Godel supervises, the
+external tools or other inits, in the Unix way: godel supervises, the
 rest of the system stays composed of separate small programs.

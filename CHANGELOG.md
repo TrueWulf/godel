@@ -66,11 +66,11 @@
   last exit instead of a global timeout. Measured in QEMU: 5.2 s to
   2.2 s with an interactive getty shell (the only deliberate holdout),
   ~0.4 s with none; 259-service boot shuts down in 2.4 s.
-- Console output is now a timeline: `Godel: boot complete in N ms` is
+- Console output is now a timeline: `godel: boot complete in N ms` is
   logged when the last dependency chain settles (the existing
-  `Godel: ready in` line keeps measuring configuration load), shutdown
+  `godel: ready in` line keeps measuring configuration load), shutdown
   logs `stopping N running service(s)`, per-service SIGKILL decisions,
-  and a final `Godel: down in N ms (remount-ro X ms, sync Y ms)`.
+  and a final `godel: down in N ms (remount-ro X ms, sync Y ms)`.
 - SIGKILL fallback after the grace interval shrank from 1 s to 250 ms.
 
 ## 0.9.5 - 2026-10-02
@@ -115,7 +115,7 @@
   `ID=alpine` tree with mdev and runlevels) joined the compatibility
   matrix, and `tools/build-alpine.sh` assembles a disposable musl +
   busybox Alpine rootfs for the new `alpine-mdev` QEMU session: real
-  musl binaries boot Godel as init, mdev scans, gettys answer, and the
+  musl binaries boot godel as init, mdev scans, gettys answer, and the
   shutdown path completes cleanly (`make qemu-alpine`).
 - Measured boot and shutdown profiling: every supervisor log line now
   carries a `[T+Nms]` monotonic stamp (PID 1 only), shutdown logs the
@@ -138,7 +138,7 @@
   initramfs names from Arch/Fedora/Void and Debian.
 - Added bootloader backends for Limine (current `limine.conf` and legacy
   `limine.cfg` syntax, auto-detected), extlinux/syslinux, systemd-boot,
-  and rEFInd. Every backend adds only a separate `Godel (test)` entry,
+  and rEFInd. Every backend adds only a separate `godel (test)` entry,
   preserves the existing default selection, creates a backup, and
   verifies its result. `make install-godel BOOTLOADER=<name>` is the
   generic entry point.
@@ -157,7 +157,7 @@
   sysctl, D-Bus, elogind, NetworkManager, gettys, log sync) from what
   is actually installed, validates it with `godel -t` before touching
   the system, backs everything up under `/etc/godel/backups`, and adds
-  a separate `Godel (test)` GRUB entry. The default entry and
+  a separate `godel (test)` GRUB entry. The default entry and
   `GRUB_DEFAULT` are never modified; unsupported bootloaders are
   refused, not guessed.
 - Bootloader backends are pluggable (`tools/bootloaders/grub.sh`
@@ -331,7 +331,7 @@
 
 - Added a bootable QEMU test image: `tools/build-rootfs.sh`,
   `tools/build-image.sh`, `tools/run-system.sh`, and `make qemu-system`.
-  Godel runs as PID 1 from an ext4 virtio disk with busybox, serial
+  godel runs as PID 1 from an ext4 virtio disk with busybox, serial
   login through getty, and a persistent root filesystem.
 - Added real boot oneshots: hostname, root remount rw, `/tmp` tmpfs,
   and optional `/home` and `/var` mounts that tolerate missing disks.

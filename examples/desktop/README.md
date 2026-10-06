@@ -1,5 +1,5 @@
 Example desktop service set for a non-systemd distribution
-(Artix, Void, or similar) booting with Godel as PID 1.
+(Artix, Void, or similar) booting with godel as PID 1.
 
 Adapt before installing:
 

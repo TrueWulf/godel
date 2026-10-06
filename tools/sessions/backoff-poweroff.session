@@ -15,5 +15,5 @@ sleep 6
 verify restarting in
 
 send godelctl poweroff
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect powering off timeout=30

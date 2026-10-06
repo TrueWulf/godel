@@ -22,5 +22,5 @@ send echo ac-$(awk '$1=="aftercloser"{print $2}' /run/godel/status)
 expect ac-stopped timeout=10
 
 send godelctl poweroff
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect powering off timeout=30

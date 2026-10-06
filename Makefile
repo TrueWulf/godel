@@ -46,7 +46,7 @@ install: bin/godel bin/godelctl
 	install -Dm644 man/godelctl.8 $(DESTDIR)$(PREFIX)/share/man/man8/godelctl.8
 
 # One-command install: builds, detects distro and bootloader, generates the
-# desktop-base service set, and adds a separate 'Godel (test)' boot entry;
+# desktop-base service set, and adds a separate 'godel (test)' boot entry;
 # the default entry is not touched.
 # Run as root:  doas make install-godel BOOTLOADER=grub   (add DRYRUN:
 # bin/godel-install --dry-run directly).

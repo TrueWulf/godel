@@ -58,11 +58,11 @@ default_entry: Existing
     path: boot():/boot/vmlinuz-test
 EOF
 	run_install limine
-	assert_twice "$fx/boot/limine/limine.conf" '^/Godel (test)$'
+	assert_twice "$fx/boot/limine/limine.conf" '^/godel (test)$'
 	grep -q '^timeout: 0$' "$fx/boot/limine/limine.conf"
 	grep -q '^default_entry: Existing$' "$fx/boot/limine/limine.conf"
 	run_install limine
-	assert_twice "$fx/boot/limine/limine.conf" '^/Godel (test)$'
+	assert_twice "$fx/boot/limine/limine.conf" '^/godel (test)$'
 	rm -rf "$fx"
 }
 
@@ -76,10 +76,10 @@ PROTOCOL=linux
 KERNEL_PATH=boot():/boot/vmlinuz-test
 EOF
 	run_install limine
-	assert_twice "$fx/boot/limine.cfg" '^/Godel (test)$'
+	assert_twice "$fx/boot/limine.cfg" '^/godel (test)$'
 	grep -q '^TIMEOUT=0$' "$fx/boot/limine.cfg"
 	run_install limine
-	assert_twice "$fx/boot/limine.cfg" '^/Godel (test)$'
+	assert_twice "$fx/boot/limine.cfg" '^/godel (test)$'
 	rm -rf "$fx"
 }
 
@@ -106,10 +106,10 @@ test_systemd_boot() {
 	mkdir -p "$fx/boot/loader/entries"
 	printf 'default existing.conf\ntimeout 0\n' > "$fx/boot/loader/loader.conf"
 	run_install systemd-boot
-	grep -q '^title   Godel (test)$' "$fx/boot/loader/entries/godel-test.conf"
+	grep -q '^title   godel (test)$' "$fx/boot/loader/entries/godel-test.conf"
 	grep -q '^default existing.conf$' "$fx/boot/loader/loader.conf"
 	run_install systemd-boot
-	assert_twice "$fx/boot/loader/entries/godel-test.conf" '^title   Godel (test)$'
+	assert_twice "$fx/boot/loader/entries/godel-test.conf" '^title   godel (test)$'
 	rm -rf "$fx"
 }
 
@@ -118,10 +118,10 @@ test_refind() {
 	mkdir -p "$fx/boot/EFI/refind"
 	printf 'default_selection Existing\n' > "$fx/boot/EFI/refind/refind.conf"
 	run_install refind
-	assert_twice "$fx/boot/EFI/refind/refind.conf" '^menuentry "Godel (test)" {$'
+	assert_twice "$fx/boot/EFI/refind/refind.conf" '^menuentry "godel (test)" {$'
 	grep -q '^default_selection Existing$' "$fx/boot/EFI/refind/refind.conf"
 	run_install refind
-	assert_twice "$fx/boot/EFI/refind/refind.conf" '^menuentry "Godel (test)" {$'
+	assert_twice "$fx/boot/EFI/refind/refind.conf" '^menuentry "godel (test)" {$'
 	rm -rf "$fx"
 }
 
@@ -219,7 +219,7 @@ EOF
 [ "$1" = "-o" ] || exit 1
 {
 	echo "menuentry 'Alpine Linux' --id alpine { }"
-	echo "menuentry 'Godel (test)' --id gnulinux-godel-test { }"
+	echo "menuentry 'godel (test)' --id gnulinux-godel-test { }"
 } > "$2"
 EOF
 	chmod 755 "$fx/fake-mkconfig.sh"
@@ -229,7 +229,7 @@ EOF
 		cat "$fx/run.log"; echo "test-compat-install: alpine grub install failed" >&2; exit 1;
 	}
 	assert_alpine_common "$fx/run.log"
-	[ "$(grep -c "menuentry 'Godel (test)'" "$fx/etc/grub.d/40_custom")" = 1 ]
+	[ "$(grep -c "menuentry 'godel (test)'" "$fx/etc/grub.d/40_custom")" = 1 ]
 	[ "$(md5sum "$fx/etc/default/grub" | cut -d' ' -f1)" != "" ]
 	grep -q '^GRUB_DEFAULT=0$' "$fx/etc/default/grub"
 	rm -rf "$fx"

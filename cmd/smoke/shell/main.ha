@@ -7,7 +7,7 @@ use strings;
 use time;
 
 export fn main() void = {
-	fmt::println("Godel QEMU smoke test: /bin/sh started")!;
+	fmt::println("godel QEMU smoke test: /bin/sh started")!;
 	let buffer: [4096]u8 = [0...];
 	let cmdline: []u8 = strings::toutf8("reboot");
 	match (os::open("/proc/cmdline")) {
@@ -33,9 +33,9 @@ export fn main() void = {
 		yield rt::SIGUSR1;
 	};
 	fmt::println(if (sig == rt::SIGTERM) {
-		yield "Godel QEMU smoke test: sending SIGTERM to init";
+		yield "godel QEMU smoke test: sending SIGTERM to init";
 	} else {
-		yield "Godel QEMU smoke test: sending SIGUSR1 to init";
+		yield "godel QEMU smoke test: sending SIGUSR1 to init";
 	})!;
 	time::sleep(2 * time::SECOND);
 	let _ = rt::kill(rt::getppid(), sig);

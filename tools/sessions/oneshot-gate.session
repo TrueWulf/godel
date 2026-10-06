@@ -43,5 +43,5 @@ send echo set-size-$(wc -l < /run/godel/status)
 expect set-size-6 timeout=10
 
 send godelctl poweroff
-expect Godel: shutting down timeout=30
+expect godel: shutting down timeout=30
 expect powering off timeout=30
