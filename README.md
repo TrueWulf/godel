@@ -4,7 +4,7 @@
 
 A small, static Linux init and service supervisor in Hare.
 
-[Architecture](docs/architecture.md) · [Install](docs/install.md) · [First boot](docs/first-boot.md) · [Comparison](docs/comparison.md) · [Benchmarks](docs/benchmarks.md) · [License](LICENSE)
+[Architecture](docs/architecture.md) · [Install](docs/install.md) · [First boot](docs/first-boot.md) · [Comparison](docs/comparison.md) · [Benchmarks](docs/benchmarks.md)
 
 </div>
 
