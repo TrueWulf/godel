@@ -13,8 +13,7 @@ A modern, simple, and fast Linux init and service supervisor written in Hare.
 godel is one static, libc-free binary that runs as PID 1 and supervises
 every service: dependency ordering, restart policies, readiness gating,
 per-service logs, `run-as`, atomic reload, recovery. No allocation after
-boot; ~380 KB stripped. It is the running system init on the
-development machine (Artix, GRUB and Limine).
+boot; ~380 KB stripped.
 
 Built for VMs, embedded images, and personal machines on non-systemd
 distros (Artix, Void, Alpine, Gentoo). Small enough to read in one
@@ -58,7 +57,7 @@ bootloader.
 ## Install
 
 ```sh
-doas make install-godel BOOTLOADER=grub
+make install-godel BOOTLOADER=grub
 ```
 
 `bin/godel-install` detects the distro, generates the desktop service
