@@ -229,9 +229,14 @@ export fn main() void = {
 	const sfd = godel::new_signalfd(&mask);
 	if (!(godel::epoll_create(&ep) is void)) ep.fd = -1;
 	if (!(godel::timer_create(&tmr) is void)) tmr.fd = -1;
-	if (sfd < 0 || ep.fd < 0 || tmr.fd < 0) os::exit(1);
+	if (sfd < 0 || ep.fd < 0 || tmr.fd < 0) {
+		logf("godel: event setup failed (sfd {}, epoll {}, timer {})\n",
+			sfd, ep.fd, tmr.fd);
+		os::exit(1);
+	};
 	if (!(godel::epoll_add(&ep, sfd, godel::TAG_SIGNAL) is void)
 			|| !(godel::epoll_add(&ep, tmr.fd, godel::TAG_TIMER) is void)) {
+		logf("godel: event registration failed\n");
 		os::exit(1);
 	};
 	if (ctl_fd >= 0
@@ -240,7 +245,7 @@ export fn main() void = {
 		ctl_fd = -1;
 	};
 
-		const boot_ms = godel::now_ms();
+	const boot_ms = godel::now_ms();
 	load_and_apply();
 	boot_ready_ms = godel::now_ms() - boot_ms;
 	logf("godel: ready in {} ms; {} service(s) configured\n",
@@ -403,7 +408,6 @@ fn stop_service(index: size) void = {
 	godel::close_fd(notify_r[index]);
 	notify_r[index] = -1;
 	godel::kill_process_group(rtst.pid, rt::SIGTERM);
-	const had_cgroup = cg.enabled;
 	let slot_at: i64 = godel::now_ms()
 		+ sets[active_set].services[index].shutdown_timeout_ms;
 	if (slot_at > godel::now_ms() + SHUTDOWN_CAP_MS) {
@@ -415,7 +419,7 @@ fn stop_service(index: size) void = {
 		slot.used = true;
 		slot.pid = rtst.pid;
 		slot.pidfd = rtst.pidfd;
-		slot.had_cgroup = had_cgroup || cg.enabled;
+		slot.had_cgroup = cg.enabled;
 		slot.shutdown_at = slot_at;
 		slot.name_len = len(name): u8;
 		slot.name[..len(name)] = name;
@@ -636,7 +640,7 @@ fn ensure_tables(count: size) void = {
 	const n_order = alloc([0...], count) as []size;
 	const n_match = alloc([godel::NO_INDEX...], count) as []u16;
 	const n_matched = alloc([false...], count) as []bool;
-	const n_status = alloc([0...], count * 80 + 64) as []u8;
+	const n_status = alloc([0...], count * 96 + 64) as []u8;
 
 	const old_svcs = svcs;
 	const old_dying = dying;
