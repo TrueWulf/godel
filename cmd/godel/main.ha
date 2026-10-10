@@ -514,6 +514,7 @@ fn ctl_command(line: []u8) void = {
 	} else if (bytes::equal(verb, strings::toutf8("start"))) {
 		if (svcs[idx].pid > 0) return;
 		svcs[idx].state = godel::state::stopped;
+		svcs[idx].restarts = 0;
 		svcs[idx].restart_at = 0;
 		logf("godel: ctl: starting {}\n", nm(godel::svc_name(svc)));
 		start(idx);
