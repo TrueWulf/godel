@@ -38,7 +38,7 @@ and Limine). Verified every change:
 git clone https://codeberg.org/TrueWulf/godel.git
 cd godel
 make            # builds bin/godel, bin/godelctl (needs the Hare toolchain)
-doas make install-godel BOOTLOADER=limine
+make install-godel BOOTLOADER=limine
 ```
 
 Replace `limine` with `grub`, `extlinux`, `systemd-boot`, or `refind`.
@@ -81,7 +81,7 @@ with `restarts=0`.
 ## Preview without changes
 
 ```sh
-doas bin/godel-install --bootloader limine --dry-run
+bin/godel-install --bootloader limine --dry-run
 ```
 
 The dry run detects, generates, validates the profile, and prints every
@@ -122,8 +122,8 @@ The util-linux `reboot` and `shutdown` binaries try to talk to systemd
 the supervisor's own control path instead:
 
 ```sh
-doas godelctl reboot
-doas godelctl poweroff
+godelctl reboot
+godelctl poweroff
 ```
 
 Do **not** use `reboot -f`: it triggers the reboot syscall directly,
