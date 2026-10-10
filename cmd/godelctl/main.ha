@@ -103,19 +103,27 @@ fn ctl_write(verb: str, name: str) int = {
 	return 0;
 };
 
+fn open_log(name: str) (io::file | void) = {
+	let p: [64]u8 = [0...];
+	const var_log = fmt::bsprintf(p, "/var/log/godel/{}.log", name)!;
+	match (os::open(var_log)) {
+	case let f: io::file => return f;
+	case => void;
+	};
+	const run_log = fmt::bsprintf(p, "/run/godel/logs/{}.log", name)!;
+	match (os::open(run_log)) {
+	case let f: io::file => return f;
+	case => return;
+	};
+};
+
 fn print_log(name: str) int = {
-	let path: [64]u8 = [0...];
-	const p = fmt::bsprintf(path, "/var/log/godel/{}.log", name)!;
-	const f = match (os::open(p)) {
+	const f = match (open_log(name)) {
 	case let f: io::file => yield f;
-	case =>
-		const rp = fmt::bsprintf(path, "/run/godel/logs/{}.log", name)!;
-		match (os::open(rp)) {
-		case let f: io::file => yield f;
-		case =>
-			fmt::errorfln("godelctl: no log for {}", name)!;
-			return 1;
-		};
+	case void => {
+		fmt::errorfln("godelctl: no log for {}", name)!;
+		return 1;
+	};
 	};
 	defer io::close(f)!;
 	match (io::copy(os::stdout, f)) {
