@@ -12,6 +12,8 @@ const USAGE: str =
 
 const VERSION: str = "0.9.5.3";
 
+def STATUS_MAX: size = 32768;
+
 fn bytes_eq(a: []u8, b: []u8) bool = {
 	if (len(a) != len(b)) return false;
 	for (let i = 0z; i < len(a); i += 1) {
@@ -57,7 +59,7 @@ fn known_service(name: str) bool = {
 	case => return false;
 	};
 	defer io::close(f)!;
-	let buf: [8192]u8 = [0...];
+	let buf: [STATUS_MAX]u8 = [0...];
 	let used: size = 0;
 	for (used < len(buf)) {
 		match (io::read(f, buf[used..])) {
@@ -107,8 +109,13 @@ fn print_log(name: str) int = {
 	const f = match (os::open(p)) {
 	case let f: io::file => yield f;
 	case =>
-		fmt::errorfln("godelctl: no log for {}", name)!;
-		return 1;
+		const rp = fmt::bsprintf(path, "/run/godel/logs/{}.log", name)!;
+		match (os::open(rp)) {
+		case let f: io::file => yield f;
+		case =>
+			fmt::errorfln("godelctl: no log for {}", name)!;
+			return 1;
+		};
 	};
 	defer io::close(f)!;
 	match (io::copy(os::stdout, f)) {
@@ -164,7 +171,7 @@ fn field_num(field: []u8, key: str) u64 = {
 };
 
 fn print_json_status() int = {
-	let buf: [8192]u8 = [0...];
+	let buf: [STATUS_MAX]u8 = [0...];
 	const used = read_status(&buf);
 	fmt::print("[")!;
 	let pos: size = 0;
@@ -211,7 +218,7 @@ fn print_uptime() int = {
 	};
 	const now = time::now(time::clock::REALTIME);
 	const secs = time::diff(st.mtime, now) / time::SECOND;
-	let buf: [8192]u8 = [0...];
+	let buf: [STATUS_MAX]u8 = [0...];
 	const used = read_status(&buf);
 	let total = 0z;
 	let up = 0z;
