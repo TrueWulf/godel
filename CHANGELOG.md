@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.9.6 - 2026-10-11
+
+- Audit-hardening pass across the supervisor, godelctl, and the
+  installer. Supervisor: event-setup failures are logged before exit,
+  the dying slot's cgroup flag is computed once, the status buffer has
+  headroom against the worst-case line, and `godelctl start` resets the
+  restart counter so a gave-up service gets a genuine fresh start.
+- godelctl: the status snapshot buffer is 32 KiB (status of very large
+  service sets no longer truncates the tail), and `godelctl catlog`
+  falls back to `/run/godel/logs/` when `/var/log/godel/` has no file.
+- Installer: `dief` takes the message only, the unused `fmsg` helper is
+  gone, staged writes go through a short-write-safe `write_all`, and
+  probe/report string leaks (runlevel listings, mdev probes, installed
+  binary paths) are freed.
+- Both fixture matrices and the 77 unit tests pass unchanged.
+
 ## 0.9.5.3 - 2026-10-05
 
 - The installer is one binary now. The bootloader phase (detect,

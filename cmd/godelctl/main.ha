@@ -10,7 +10,7 @@ use time;
 const USAGE: str =
 	"usage: godelctl status|status --json|list|uptime|boot-report [LOG]|start <service>|stop <service>|catlog <service>|reload|reboot|poweroff";
 
-const VERSION: str = "0.9.5.3";
+const VERSION: str = "0.9.6";
 
 def STATUS_MAX: size = 32768;
 

@@ -5,7 +5,7 @@ use godel;
 use rt;
 use strings;
 
-def VERSION: str = "0.9.5.3";
+def VERSION: str = "0.9.6";
 def CONSOLE_DEVICE: str = "/dev/console";
 def KILL_PHASE_MS: i64 = 250;
 def SHUTDOWN_CAP_MS: i64 = 30_000;

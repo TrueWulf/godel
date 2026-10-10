@@ -30,12 +30,10 @@ fn die(msg: str) never = {
 	os::exit(1);
 };
 
-fn dief(buf: []u8, msg: str) never = {
+fn dief(msg: str) never = {
 	fmt::errorfln("install: {}", msg)!;
 	os::exit(1);
 };
-
-fn fmsg(buf: []u8, msg: str) str = fmt::bsprintf(buf, msg)!;
 
 fn info(msg: str) void = {
 	let _ = fmt::printfln("install: {}", msg);
@@ -136,6 +134,7 @@ fn dir_names_sorted(path: str) []str = {
 
 fn openrc_report(c: *ctx) void = {
 	const rl_root = path_of(c, "/etc/runlevels");
+	defer free(rl_root);
 	if (!(os::stat(rl_root) is fs::filestat)) return;
 	info("OpenRC runlevels found; reading them as a capability source (never executed)");
 	const levels = ["sysinit", "boot", "default"];
@@ -143,7 +142,14 @@ fn openrc_report(c: *ctx) void = {
 		const rl_path = strings::concat("/etc/runlevels/", levels[l])!;
 		defer free(rl_path);
 		const rl_dir = joined(c, rl_path);
+		defer free(rl_dir);
 		const names = dir_names_sorted(rl_dir);
+		defer {
+			for (let i = 0z; i < len(names); i += 1) {
+				free(names[i]);
+			};
+			free(names);
+		};
 		if (len(names) == 0) continue;
 		let line = strings::concat("  runlevel ", levels[l], ": ")!;
 		let used = len(line);
@@ -349,18 +355,28 @@ fn probe_findmnt(field: str) str = {
 	return result;
 };
 
+fn write_all(f: io::file, data: []u8) void = {
+	let off: size = 0;
+	for (off < len(data)) {
+		match (io::write(f, data[off..])) {
+		case let n: size => off += n;
+		case => die("short write to a staged file");
+		};
+	};
+};
+
 fn conf(c: *ctx, name: str, contents: str) void = {
 	const path = strings::concat(c.stage, "/", name, ".conf")!;
 	defer free(path);
 	match (os::create(path, 0o644)) {
 	case let f: io::file => {
 		defer io::close(f)!;
-		io::write(f, strings::toutf8(contents)) as size;
-		io::write(f, ['\n']: []u8) as size;
+		write_all(f, strings::toutf8(contents));
+		write_all(f, ['\n']: []u8);
 	};
 	case => {
 		let fbuf: [256]u8 = [0...];
-		dief(fbuf, fmt::bsprintf(fbuf, "cannot write {}", path)!);
+		dief(fmt::bsprintf(fbuf, "cannot write {}", path)!);
 	};
 	};
 	append(c.enabled, name)!;
@@ -383,11 +399,11 @@ fn write_file(path: str, contents: str, mode: fs::mode) void = {
 	match (os::create(path, mode)) {
 	case let f: io::file => {
 		defer io::close(f)!;
-		io::write(f, strings::toutf8(contents)) as size;
+		write_all(f, strings::toutf8(contents));
 	};
 	case let e: fs::error => {
 		let fbuf: [512]u8 = [0...];
-		dief(fbuf, fmt::bsprintf(fbuf, "cannot write {}: {}", path,
+		dief(fmt::bsprintf(fbuf, "cannot write {}: {}", path,
 			fs::strerror(e))!);
 	};
 	};
@@ -408,11 +424,11 @@ fn copy_file(src: str, dst: str, mode: fs::mode) void = {
 	match (os::create(dst, mode)) {
 	case let f: io::file => {
 		defer io::close(f)!;
-		io::write(f, data) as size;
+		write_all(f, data);
 	};
 	case let e: fs::error => {
 		let fbuf: [512]u8 = [0...];
-		dief(fbuf, fmt::bsprintf(fbuf, "cannot write {}: {}", dst,
+		dief(fmt::bsprintf(fbuf, "cannot write {}: {}", dst,
 			fs::strerror(e))!);
 	};
 	};
@@ -420,7 +436,7 @@ fn copy_file(src: str, dst: str, mode: fs::mode) void = {
 
 fn dief_read_fail(src: str) never = {
 	let fbuf: [256]u8 = [0...];
-	dief(fbuf, fmt::bsprintf(fbuf, "cannot read {}", src)!);
+	dief(fmt::bsprintf(fbuf, "cannot read {}", src)!);
 };
 
 fn ensure_parent(dst: str) void = {
@@ -452,7 +468,7 @@ fn write_mount_helper(c: *ctx, path: str, mounts: []str) void = {
 	};
 	case => {
 		let fbuf: [256]u8 = [0...];
-		dief(fbuf, fmt::bsprintf(fbuf, "cannot write {}", path)!);
+		dief(fmt::bsprintf(fbuf, "cannot write {}", path)!);
 	};
 	};
 };
@@ -550,9 +566,13 @@ fn generate_profile(c: *ctx, fb: *fstab) void = {
 		const mdev = find_first(c, ["/bin/mdev", "/sbin/mdev",
 			"/usr/bin/mdev", "/usr/sbin/mdev"]);
 		if (mdev is str) {
-			const mdev_conf = if (os::stat(path_of(c, "/etc/mdev.conf"))
+			const mdev_conf_path = path_of(c, "/etc/mdev.conf");
+			defer free(mdev_conf_path);
+			const mdev_conf = if (os::stat(mdev_conf_path)
 					is fs::filestat) "present" else "missing";
-			if (os::stat(path_of(c, "/proc/sys/kernel/hotplug"))
+			const hotplug_path = path_of(c, "/proc/sys/kernel/hotplug");
+			defer free(hotplug_path);
+			if (os::stat(hotplug_path)
 					is fs::filestat) {
 				info("mdev hotplug helper: available");
 			} else {
@@ -740,12 +760,17 @@ fn commit(c: *ctx) void = {
 	case void => void;
 	case => die("cannot commit services.d");
 	};
-	copy_file("bin/godel", joined(c, "/usr/local/sbin/godel"), 0o755);
-	copy_file("bin/godelctl", joined(c, "/usr/local/bin/godelctl"), 0o755);
-	copy_file("man/godel.8",
-		joined(c, "/usr/local/share/man/man8/godel.8"), 0o644);
-	copy_file("man/godelctl.8",
-		joined(c, "/usr/local/share/man/man8/godelctl.8"), 0o644);
+	install_binary(c, "bin/godel", "/usr/local/sbin/godel", 0o755);
+	install_binary(c, "bin/godelctl", "/usr/local/bin/godelctl", 0o755);
+	install_binary(c, "man/godel.8", "/usr/local/share/man/man8/godel.8", 0o644);
+	install_binary(c, "man/godelctl.8",
+		"/usr/local/share/man/man8/godelctl.8", 0o644);
+};
+
+fn install_binary(c: *ctx, src: str, dst_rel: str, mode: fs::mode) void = {
+	const dst = joined(c, dst_rel);
+	defer free(dst);
+	copy_file(src, dst, mode);
 };
 
 fn copy_tree(src: str, dst: str) void = {
@@ -821,7 +846,7 @@ export fn main() void = {
 	if (bootloader == "") install_usage();
 	if (!bootloader_known(bootloader)) {
 		let fbuf: [256]u8 = [0...];
-		dief(fbuf, fmt::bsprintf(fbuf,
+		dief(fmt::bsprintf(fbuf,
 			"unknown bootloader '{}' (available: grub, limine, extlinux, systemd-boot, refind)",
 			bootloader)!);
 	};
@@ -890,7 +915,7 @@ export fn main() void = {
 		const cmdline = match (read_small_file(c.cmdline_file)) {
 		case void => {
 			let fbuf: [256]u8 = [0...];
-			dief(fbuf, fmt::bsprintf(fbuf, "cannot read {}", c.cmdline_file)!);
+			dief(fmt::bsprintf(fbuf, "cannot read {}", c.cmdline_file)!);
 		};
 		case let s: str => yield s;
 		};
@@ -898,7 +923,7 @@ export fn main() void = {
 		const boot_image = match (first_token_prefix(cmdline, "BOOT_IMAGE=")) {
 		case void => {
 			let fbuf: [256]u8 = [0...];
-			dief(fbuf, fmt::bsprintf(fbuf, "cannot detect BOOT_IMAGE in {}", c.cmdline_file)!);
+			dief(fmt::bsprintf(fbuf, "cannot detect BOOT_IMAGE in {}", c.cmdline_file)!);
 		};
 		case let k: str => yield strings::dup(k)!;
 		};
@@ -906,7 +931,7 @@ export fn main() void = {
 			yield boot_image;
 		} else if (strings::hasprefix(boot_image, "/")) {
 			let fbuf: [256]u8 = [0...];
-			dief(fbuf, fmt::bsprintf(fbuf,
+			dief(fmt::bsprintf(fbuf,
 				"unexpected BOOT_IMAGE path: {}", boot_image)!);
 		} else {
 			yield strings::concat("/boot/",
@@ -925,11 +950,11 @@ export fn main() void = {
 		case let st: fs::filestat =>
 			if (!fs::isfile(st.mode)) {
 				let fbuf: [256]u8 = [0...];
-				dief(fbuf, fmt::bsprintf(fbuf, "kernel {} not found", kfull)!);
+				dief(fmt::bsprintf(fbuf, "kernel {} not found", kfull)!);
 			};
 		case => {
 			let fbuf: [256]u8 = [0...];
-			dief(fbuf, fmt::bsprintf(fbuf, "kernel {} not found", kfull)!);
+			dief(fmt::bsprintf(fbuf, "kernel {} not found", kfull)!);
 		};
 		};
 	};
@@ -954,7 +979,7 @@ export fn main() void = {
 		defer free(fst);
 		if (!(os::stat(fst) is fs::filestat)) {
 			let fbuf: [256]u8 = [0...];
-			dief(fbuf, fmt::bsprintf(fbuf, "{} missing", fst)!);
+			dief(fmt::bsprintf(fbuf, "{} missing", fst)!);
 		};
 	};
 

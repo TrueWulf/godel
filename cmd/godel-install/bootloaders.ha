@@ -33,7 +33,7 @@ fn bootloader_phase(c: *ctx, initrd: str, bootloader: str) void = {
 
 fn bl_not_detected(c: *ctx, name: str) never = {
 	let fbuf: [256]u8 = [0...];
-	dief(fbuf, fmt::bsprintf(fbuf,
+	dief(fmt::bsprintf(fbuf,
 		"bootloader '{}' not detected; refusing to guess", name)!);
 };
 
@@ -85,7 +85,7 @@ fn bl_read(path: str) str = {
 	match (read_small_file(path)) {
 	case void => {
 		let fbuf: [256]u8 = [0...];
-		dief(fbuf, fmt::bsprintf(fbuf, "cannot read {}", path)!);
+		dief(fmt::bsprintf(fbuf, "cannot read {}", path)!);
 	};
 	case let s: str => return s;
 	};
@@ -194,7 +194,7 @@ fn bl_pair_on(conf_rel: str, kernel: str, initrd: str,
 			strings::trimprefix(initrd, mount));
 	};
 	let fbuf: [256]u8 = [0...];
-	dief(fbuf, fmt::bsprintf(fbuf,
+	dief(fmt::bsprintf(fbuf,
 		"{} config is on {} but kernel/initrd are not on that partition",
 		label, mount)!);
 };
@@ -309,7 +309,7 @@ fn bl_grub(c: *ctx, initrd: str) void = {
 	const n = bl_count_lines(grubcfg, "menuentry 'godel (test)'");
 	if (n != 1) {
 		let fbuf: [256]u8 = [0...];
-		dief(fbuf, fmt::bsprintf(fbuf,
+		dief(fmt::bsprintf(fbuf,
 			"expected exactly 1 'godel (test)' entry in grub.cfg, found {}",
 			n)!);
 	};
