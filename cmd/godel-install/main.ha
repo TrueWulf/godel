@@ -555,7 +555,7 @@ fn generate_profile(c: *ctx, fb: *fstab) void = {
 				"[service \"udev-trigger\"]\ncommand = /bin/sh -c \"",
 				udevadm: str,
 				" trigger -c add && ", udevadm: str,
-				" settle\"\ntype = oneshot\nrestart = never\nafter = udev",
+				" settle --timeout=10\"\ntype = oneshot\nrestart = never\nafter = udev",
 			]...)!;
 			defer free(body);
 			conf(c, "udev-trigger", body);
