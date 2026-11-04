@@ -1,6 +1,4 @@
-# godel
-
-![godel](assets/godel-wordmark.png)
+<h1 align="center"><img src="assets/godel-wordmark.png" alt="godel" width="330"></h1>
 
 godel is a Linux init and service supervisor written in Hare. One static
 binary, no libc, runs as PID 1. Dependency ordering, restart policies,
