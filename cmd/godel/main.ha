@@ -1,0 +1,1186 @@
+use bytes;
+use fmt;
+use os;
+use godel;
+use rt;
+use strings;
+
+def VERSION: str = "1.0.0";
+def CONSOLE_DEVICE: str = "/dev/console";
+def KILL_PHASE_MS: i64 = 250;
+def SHUTDOWN_CAP_MS: i64 = 30_000;
+def SHUTDOWN_POWEROFF: u64 = 0x4321fedc;
+def SHUTDOWN_RESTART: u64 = 0x1234567;
+def MS_RDONLY: u64 = 1;
+def MS_REMOUNT: u64 = 32;
+const EMPTY_CS: [1]u8 = [0];
+const RO_TYPES: [_]str = [
+	"ext2", "ext3", "ext4", "xfs", "btrfs", "vfat", "exfat", "f2fs", "ntfs3",
+];
+def RB_MAGIC: u64 = 0xfee1dead;
+def RB_CMD: u64 = 672274793;
+def RB_ENABLE_CAD: u64 = 0x89abcdef;
+
+type shutdown_action = enum u8 { poweroff, reboot };
+
+let sets: [2]godel::set = [godel::set { ... }, godel::set { ... }];
+let active_set: size = 0;
+let svcs: []godel::runtime = [];
+
+type dying_entry = struct {
+	used: bool,
+	pid: int,
+	pidfd: int,
+	had_cgroup: bool,
+	shutdown_at: i64,
+	name: [godel::MAX_NAME_LEN + 1]u8,
+	name_len: u8,
+};
+
+let dying: []dying_entry = [];
+
+let notify_r: []int = [];
+
+let child_log_fd: int = -1;
+let child_notify_w: int = -1;
+let child_notify_no: int = 0;
+let ctl_fd: int = -1;
+
+type reaped_entry = struct { used: bool, pid: int, status: u32 };
+
+let reaped: []reaped_entry = [];
+let reaped_slot: size = 0;
+
+let start_order_buf: []size = [];
+let match_idx: []u16 = [];
+let matched: []bool = [];
+let status_buf: []u8 = [];
+
+fn reap_orphans() void = {
+	if (len(reaped) == 0) return;
+	for (true) {
+		const reaped_child = match (godel::wait_any_nohang()) {
+		case void => return;
+		case let r: (int, u32) => yield r;
+		};
+		reaped[reaped_slot] = reaped_entry {
+			used = true,
+			pid = reaped_child.0,
+			status = reaped_child.1,
+		};
+		reaped_slot = (reaped_slot + 1) % len(reaped);
+	};
+};
+
+fn take_status(pid: int) (void | u32) = {
+	for (let i = 0z; i < len(reaped); i += 1) {
+		if (reaped[i].used && reaped[i].pid == pid) {
+			const status = reaped[i].status;
+			reaped[i] = reaped_entry { ... };
+			return status;
+		};
+	};
+	return godel::wait_pid_nohang(pid);
+};
+
+type shutdown_state = struct {
+	active: bool,
+	mode: shutdown_action,
+	deadline: i64,
+	begin_ms: i64,
+};
+
+let shutdown = shutdown_state { ... };
+
+let rescue_pid: int = 0;
+let rescue_pidfd: int = -1;
+let recovery_active = false;
+let recovery_used = false;
+
+let ep: godel::epoll = godel::epoll { fd = -1 };
+let tmr: godel::timer = godel::timer { fd = -1 };
+let cg: godel::controller = godel::controller { ... };
+let logger: godel::log = godel::log {
+	fd = -1,
+	written = 0,
+	limit = godel::DEFAULT_LIMIT,
+	path = [0...],
+	path_len = 0,
+};
+
+const FS_PROC: [5]u8 = ['p', 'r', 'o', 'c', 0];
+const FS_SYSFS: [6]u8 = ['s', 'y', 's', 'f', 's', 0];
+const FS_DEVTMPFS: [9]u8 = ['d', 'e', 'v', 't', 'm', 'p', 'f', 's', 0];
+const FS_TMPFS: [6]u8 = ['t', 'm', 'p', 'f', 's', 0];
+const FS_CGROUP2: [8]u8 = ['c', 'g', 'r', 'o', 'u', 'p', '2', 0];
+const FS_DEVPTS: [7]u8 = ['d', 'e', 'v', 'p', 't', 's', 0];
+const MODE_0755: [10]u8 = ['m', 'o', 'd', 'e', '=', '0', '7', '5', '5', 0];
+const MODE_1777: [10]u8 = ['m', 'o', 'd', 'e', '=', '1', '7', '7', '7', 0];
+const DEVPTS_OPTS: [29]u8 = [
+	'g', 'i', 'd', '=', '5', ',',
+	'm', 'o', 'd', 'e', '=', '6', '2', '0', ',',
+	'p', 't', 'm', 'x', 'm', 'o', 'd', 'e', '=', '0', '6', '6', '6', 0,
+];
+const RESCUE_CS: [8]u8 = ['/', 'b', 'i', 'n', '/', 's', 'h', 0];
+
+// Every supervisor log line is prefixed with the monotonic clock reading
+// so boot and shutdown profiles are computable from supervisor.log alone.
+// CLOCK_MONOTONIC starts near kernel init, so T+N is the kernel-relative
+// boot timeline. The stamp is a PID 1 feature only: `godel -t` output
+// stays bare.
+let stamp_log = false;
+let boot_ready_ms: i64 = 0;
+
+fn logf(f: str, args: fmt::field...) void = {
+	let buf: [512]u8 = [0...];
+	if (stamp_log) {
+		const head = fmt::bsprintf(buf, "[T+{}ms] ", godel::now_ms())!;
+		const line = fmt::bsprintf(buf[len(head)..], f, args...)!;
+		godel::write_bytes(&logger, buf[..len(head) + len(line)]);
+	} else {
+		const line = fmt::bsprintf(buf, f, args...)!;
+		godel::write_bytes(&logger, strings::toutf8(line));
+	};
+};
+
+fn state_name(state: godel::state) str = switch (state) {
+case godel::state::stopped => yield "stopped";
+case godel::state::up => yield "up";
+case godel::state::backoff => yield "backoff";
+case godel::state::gave_up => yield "gave-up";
+};
+
+fn write_status() void = {
+	let used: size = 0;
+	for (let i = 0z; i < sets[active_set].count; i += 1) {
+		const svc = &sets[active_set].services[i];
+		const ready = if (svc.notification_fd == 0) "-"
+			else if (svcs[i].ready) "yes"
+			else if (svcs[i].released) "timeout"
+			else "no";
+		const line = fmt::bsprintf(status_buf[used..],
+			"{}\t{}\tpid={}\trestarts={}\tready={}\n",
+			nm(godel::svc_name(svc)), state_name(svcs[i].state),
+			svcs[i].pid: i64, svcs[i].restarts, ready)!;
+		used += len(strings::toutf8(line));
+	};
+	match (rt::open("/run/godel/status",
+			rt::O_WRONLY | rt::O_CREATE | rt::O_TRUNC | rt::O_CLOEXEC, 0o644)) {
+	case let fd: int =>
+		if (used > 0) {
+			let _ = rt::write(fd, &status_buf[0]: *const opaque, used);
+		};
+		let _ = rt::close(fd);
+	case => void;
+	};
+};
+
+fn nm(a: []u8) str = strings::fromutf8_unsafe(a);
+
+fn mkcs(buf: []u8, s: str) *const u8 = {
+	const b = strings::toutf8(s);
+	buf[..len(b)] = b;
+	buf[len(b)] = 0;
+	return &buf[0]: *const u8;
+};
+
+fn setup_envp(envp: []nullable *const u8, envbufs: *[3][48]u8) size = {
+	envp[0] = mkcs(&envbufs[0], "HOME=/root");
+	envp[1] = mkcs(&envbufs[1], "PATH=/usr/sbin:/usr/bin:/sbin:/bin");
+	envp[2] = mkcs(&envbufs[2], "TERM=linux");
+	return 3;
+};
+
+export fn main() void = {
+	const args = os::args;
+	if (len(args) == 3 && args[1] == "-t") {
+		validate_path(args[2]);
+	};
+	if (len(args) == 2 && args[1] == "--version") {
+		fmt::println("godel", VERSION)!;
+		os::exit(0);
+	};
+	if (rt::getpid() != 1) {
+		fmt::errorfln("usage: godel [-t PATH] [--version] (PID 1 only otherwise)")!;
+		os::exit(2);
+	};
+	stamp_log = true;
+	mount_pseudo_filesystems();
+	ctl_fd = mount_runtime();
+	connect_console();
+	godel::open_file(&logger, strings::toutf8("/run/godel/godel.log"));
+	logf("godel {}: starting\n", VERSION);
+	let _ = rt::syscall(rt::SYS_reboot, RB_MAGIC, RB_CMD, RB_ENABLE_CAD, 0);
+
+	cg = godel::setup(strings::toutf8("/sys/fs/cgroup"));
+	if (cg.enabled) {
+		logf("godel: cgroup v2 enabled\n");
+		if (cg.accounting) {
+			logf("godel: memory accounting enabled\n");
+		} else {
+			logf("godel: memory accounting unavailable\n");
+		};
+	} else {
+		logf("godel: cgroup v2 unavailable, using process groups\n");
+	};
+
+	const mask = godel::signal_mask();
+	godel::block_signals(&mask);
+	const sfd = godel::new_signalfd(&mask);
+	if (!(godel::epoll_create(&ep) is void)) ep.fd = -1;
+	if (!(godel::timer_create(&tmr) is void)) tmr.fd = -1;
+	if (sfd < 0 || ep.fd < 0 || tmr.fd < 0) {
+		logf("godel: event setup failed (sfd {}, epoll {}, timer {})\n",
+			sfd, ep.fd, tmr.fd);
+		os::exit(1);
+	};
+	if (!(godel::epoll_add(&ep, sfd, godel::TAG_SIGNAL) is void)
+			|| !(godel::epoll_add(&ep, tmr.fd, godel::TAG_TIMER) is void)) {
+		logf("godel: event registration failed\n");
+		os::exit(1);
+	};
+	if (ctl_fd >= 0
+			&& !(godel::epoll_add(&ep, ctl_fd, godel::TAG_CTL) is void)) {
+		godel::close_fd(ctl_fd);
+		ctl_fd = -1;
+	};
+
+	const boot_ms = godel::now_ms();
+	load_and_apply();
+	boot_ready_ms = godel::now_ms() - boot_ms;
+	logf("godel: ready in {} ms; {} service(s) configured\n",
+		boot_ready_ms, sets[active_set].count);
+
+	let events: [20]rt::epoll_event =
+		[rt::epoll_event { events = 0, data = rt::epoll_data { u64_ = 0 } }...];
+	for (true) {
+		arm_timer();
+		const n = godel::epoll_wait_events(&ep, events[..]);
+		for (let i = 0z; i < n; i += 1) {
+			const data = events[i].data.u64_;
+			if (data == godel::TAG_SIGNAL) {
+				for (true) {
+					match (godel::read_signal(sfd)) {
+					case void => break;
+					case let sig: u8 => handle_signal(sig);
+					};
+				};
+			} else if (data == godel::TAG_TIMER) {
+				let _ = godel::timer_read_tick(&tmr);
+				on_timer();
+			} else if (data == godel::TAG_RESCUE) {
+				on_rescue_death();
+			} else if (data == godel::TAG_CTL) {
+				on_ctl();
+			} else if (data < sets[active_set].count: u64) {
+				on_service_death(data: size);
+			} else if (data >= godel::TAG_DYING_BASE
+					&& data < godel::TAG_DYING_BASE + len(dying): u64) {
+				on_dying_death((data - godel::TAG_DYING_BASE): size);
+			} else if (data >= godel::TAG_NOTIFY_BASE
+					&& data < godel::TAG_NOTIFY_BASE
+						+ sets[active_set].count: u64) {
+				on_notify((data - godel::TAG_NOTIFY_BASE): size);
+			};
+		};
+	};
+};
+
+fn start(index: size) void = {
+	const cfg = &sets[active_set].services[index];
+	const rtst = &svcs[index];
+	rtst.ready = false;
+	rtst.released = false;
+	rtst.exited = false;
+	rtst.finished = false;
+	rtst.last_status = 0;
+	child_log_fd = -1;
+	child_notify_w = -1;
+	child_notify_no = cfg.notification_fd: int;
+	godel::close_fd(notify_r[index]);
+	notify_r[index] = -1;
+	open_service_log(cfg);
+	if (cfg.notification_fd > 0) {
+		let fds: [2]int = [-1, -1];
+		match (rt::pipe2(&fds, rt::O_CLOEXEC | rt::O_NONBLOCK)) {
+		case void =>
+			child_notify_w = fds[1];
+			notify_r[index] = fds[0];
+		case let e: rt::errno =>
+			rtst.ready = true;
+			logf("godel: {}: readiness pipe failed ({}), plain ordering\n",
+				nm(godel::svc_name(cfg)), e: i64);
+		};
+	};
+	const pid = match (rt::fork()) {
+	case let p: rt::pid_t => yield p;
+	case let e: rt::errno =>
+		godel::close_fd(child_log_fd);
+		child_log_fd = -1;
+		godel::close_fd(child_notify_w);
+		child_notify_w = -1;
+		godel::close_fd(notify_r[index]);
+		notify_r[index] = -1;
+		logf("godel: cannot start {}: fork failed\n", nm(godel::svc_name(cfg)));
+		rtst.state = godel::state::gave_up;
+		write_status();
+		check_recovery();
+		return;
+	case void => run_child(&sets[active_set], cfg);
+	};
+	godel::close_fd(child_log_fd);
+	child_log_fd = -1;
+	godel::close_fd(child_notify_w);
+	child_notify_w = -1;
+	rtst.pid = pid;
+	rtst.state = godel::state::up;
+	rtst.started_at = godel::now_ms();
+	match (godel::pidfd_open(pid)) {
+		case let pfd: int =>
+			rtst.pidfd = pfd;
+			if (!(godel::epoll_add(&ep, pfd, index: u64) is void)) {
+				godel::close_fd(pfd);
+				rtst.pidfd = -1;
+				logf("godel: {}: pidfd registration failed\n", nm(godel::svc_name(cfg)));
+			};
+	case =>
+		logf("godel: {}: pidfd unavailable, supervision degraded\n",
+			nm(godel::svc_name(cfg)));
+	};
+	if (notify_r[index] >= 0) {
+		if (!(godel::epoll_add(&ep, notify_r[index],
+				godel::TAG_NOTIFY_BASE + index: u64) is void)) {
+			godel::close_fd(notify_r[index]);
+			notify_r[index] = -1;
+			rtst.ready = true;
+			logf("godel: {}: readiness registration failed, plain ordering\n",
+				nm(godel::svc_name(cfg)));
+		};
+	};
+	if (!godel::attach(&cg, godel::svc_name(cfg), pid)) {
+		logf("godel: {}: cgroup attach failed\n", nm(godel::svc_name(cfg)));
+	};
+	logf("godel: started {} (pid {})\n", nm(godel::svc_name(cfg)), pid: i64);
+	write_status();
+};
+
+fn on_notify(index: size) void = {
+	const fd = notify_r[index];
+	if (fd < 0) return;
+	let buf: [128]u8 = [0...];
+	let signalled = false;
+	let saw_eof = false;
+	for (true) {
+		match (rt::read(fd, &buf[0]: *opaque, len(buf))) {
+		case let n: size =>
+			if (n == 0) {
+				saw_eof = true;
+				break;
+			};
+			for (let k = 0z; k < n; k += 1) {
+				if (buf[k] == '\n') signalled = true;
+			};
+		case => break;
+		};
+	};
+	if (saw_eof) {
+		godel::close_fd(notify_r[index]);
+		notify_r[index] = -1;
+	};
+	if (saw_eof && !signalled
+			&& sets[active_set].services[index].kind != godel::service_kind::oneshot) {
+		logf("godel: {} closed its readiness pipe without a newline\n",
+			nm(godel::svc_name(&sets[active_set].services[index])));
+	};
+	if (!signalled || svcs[index].ready) return;
+	svcs[index].ready = true;
+	logf("godel: {} is ready after {} ms\n",
+		nm(godel::svc_name(&sets[active_set].services[index])),
+		godel::now_ms() - svcs[index].started_at);
+	write_status();
+	pump_starts();
+};
+
+fn stop_service(index: size) void = {
+	const rtst = &svcs[index];
+	if (rtst.pid <= 0) return;
+	const name = godel::svc_name(&sets[active_set].services[index]);
+	godel::close_fd(notify_r[index]);
+	notify_r[index] = -1;
+	godel::kill_process_group(rtst.pid, rt::SIGTERM);
+	let slot_at: i64 = godel::now_ms()
+		+ sets[active_set].services[index].shutdown_timeout_ms;
+	if (slot_at > godel::now_ms() + SHUTDOWN_CAP_MS) {
+		slot_at = godel::now_ms() + SHUTDOWN_CAP_MS;
+	};
+	for (let s = 0z; s < len(dying); s += 1) {
+		const slot = &dying[s];
+		if (slot.used) continue;
+		slot.used = true;
+		slot.pid = rtst.pid;
+		slot.pidfd = rtst.pidfd;
+		slot.had_cgroup = cg.enabled;
+		slot.shutdown_at = slot_at;
+		slot.name_len = len(name): u8;
+		slot.name[..len(name)] = name;
+		if (rtst.pidfd >= 0) {
+			let _ = godel::epoll_modify(&ep, rtst.pidfd,
+				godel::TAG_DYING_BASE + s: u64);
+		};
+		rtst.pid = 0;
+		rtst.pidfd = -1;
+		rtst.state = godel::state::stopped;
+		write_status();
+		return;
+	};
+	logf("godel: dying table full, {} may be orphaned\n", nm(name));
+	rtst.pid = 0;
+	rtst.pidfd = -1;
+	rtst.state = godel::state::stopped;
+	write_status();
+};
+
+fn on_service_death(index: size) void = {
+	const status = match (take_status(svcs[index].pid)) {
+	case void =>
+		logf("godel: {} signalled but has no status yet\n",
+			nm(godel::svc_name(&sets[active_set].services[index])));
+		if (svcs[index].pidfd >= 0) {
+			godel::epoll_remove(&ep, svcs[index].pidfd);
+			godel::close_fd(svcs[index].pidfd);
+			svcs[index].pidfd = -1;
+		};
+		return;
+	case let s: u32 => yield s;
+	};
+	on_service_exit(index, status);
+};
+
+fn on_ctl() void = {
+	if (ctl_fd < 0) return;
+	let buf: [256]u8 = [0...];
+	for (true) {
+		const n = match (rt::read(ctl_fd, &buf[0]: *opaque, len(buf))) {
+		case let n: size => yield n;
+		case => return;
+		};
+		if (n == 0) return;
+		let pos: size = 0;
+		for (pos < n) {
+			let end = pos;
+			for (end < n && buf[end] != '\n') end += 1;
+			if (end > pos) ctl_command(buf[pos..end]);
+			pos = end + 1;
+		};
+	};
+};
+
+fn ctl_find(name: []u8) (void | size) = {
+	for (let i = 0z; i < sets[active_set].count; i += 1) {
+		if (bytes::equal(godel::svc_name(&sets[active_set].services[i]),
+				name)) return i;
+	};
+};
+
+fn ctl_command(line: []u8) void = {
+	let sp: (void | size) = void;
+	for (let i = 0z; i < len(line); i += 1) {
+		if (line[i] == ' ') {
+			sp = i;
+			break;
+		};
+	};
+	const verb = match (sp) {
+	case void => yield line;
+	case let s: size => yield line[..s];
+	};
+	const name = match (sp) {
+	case void => yield line[..0];
+	case let s: size => yield line[s + 1..];
+	};
+	const idx = match (ctl_find(name)) {
+	case void =>
+		logf("godel: ctl: unknown service '{}'\n",
+			strings::fromutf8_unsafe(name));
+		return;
+	case let i: size => yield i;
+	};
+	const svc = &sets[active_set].services[idx];
+	if (bytes::equal(verb, strings::toutf8("stop"))) {
+		if (svcs[idx].pid <= 0) return;
+		logf("godel: ctl: stopping {}\n", nm(godel::svc_name(svc)));
+		stop_service(idx);
+		write_status();
+	} else if (bytes::equal(verb, strings::toutf8("start"))) {
+		if (svcs[idx].pid > 0) return;
+		svcs[idx].state = godel::state::stopped;
+		svcs[idx].restarts = 0;
+		svcs[idx].restart_at = 0;
+		logf("godel: ctl: starting {}\n", nm(godel::svc_name(svc)));
+		start(idx);
+		write_status();
+	};
+};
+
+fn on_service_exit(index: size, status: u32) void = {
+	const rtst = &svcs[index];
+	if (rtst.pid <= 0) return;
+	const cfg = &sets[active_set].services[index];
+	const now = godel::now_ms();
+	if (rtst.pidfd >= 0) {
+		godel::epoll_remove(&ep, rtst.pidfd);
+		godel::close_fd(rtst.pidfd);
+		rtst.pidfd = -1;
+	};
+	godel::close_fd(notify_r[index]);
+	notify_r[index] = -1;
+	rtst.pid = 0;
+	rtst.exited = true;
+	rtst.last_status = status;
+	const uptime = now - rtst.started_at;
+	let _ = godel::kill_tree(&cg, godel::svc_name(cfg));
+	godel::release(&cg, godel::svc_name(cfg));
+	if (shutdown.active) {
+		rtst.state = godel::state::stopped;
+		logf("godel: {} stopped\n", nm(godel::svc_name(cfg)));
+		write_status();
+		return;
+	};
+	const decision = godel::on_exit(rtst, cfg, status, now);
+	if (decision is godel::stopped && godel::classify(status) is void) {
+		rtst.finished = true;
+	};
+	match (godel::classify(status)) {
+	case void => match (decision) {
+		case godel::stopped => logf("godel: {} exited cleanly after {} ms\n", nm(godel::svc_name(cfg)), uptime);
+		case let delay: godel::restart_in => logf("godel: {} exited cleanly after {} ms; restarting in {} ms\n", nm(godel::svc_name(cfg)), uptime, delay);
+		case godel::gave_up => logf("godel: {} exited cleanly; restart limit reached, giving up\n", nm(godel::svc_name(cfg)));
+	};
+	case let code: u32 => match (decision) {
+		case godel::stopped => logf("godel: {} exited with code {} after {} ms\n", nm(godel::svc_name(cfg)), code, uptime);
+		case let delay: godel::restart_in => logf("godel: {} exited with code {} after {} ms; restarting in {} ms\n", nm(godel::svc_name(cfg)), code, uptime, delay);
+		case godel::gave_up => logf("godel: {} exited with code {}; restart limit reached, giving up\n", nm(godel::svc_name(cfg)), code);
+	};
+	case let sig: u8 => match (decision) {
+		case godel::stopped => logf("godel: {} killed by signal {} after {} ms\n", nm(godel::svc_name(cfg)), sig, uptime);
+		case let delay: godel::restart_in => logf("godel: {} killed by signal {} after {} ms; restarting in {} ms\n", nm(godel::svc_name(cfg)), sig, uptime, delay);
+		case godel::gave_up => logf("godel: {} killed by signal {}; restart limit reached, giving up\n", nm(godel::svc_name(cfg)), sig);
+	};
+	};
+	write_status();
+	pump_starts();
+	if (shutdown.active && all_stopped()) finish_shutdown();
+	check_recovery();
+};
+
+fn all_stopped() bool = {
+	for (let i = 0z; i < len(svcs); i += 1) {
+		if (svcs[i].pid > 0) return false;
+	};
+	for (let i = 0z; i < len(dying); i += 1) {
+		if (dying[i].used) return false;
+	};
+	if (rescue_pid > 0) return false;
+	return true;
+};
+
+fn on_dying_death(slot_index: size) void = {
+	const slot = &dying[slot_index];
+	if (!slot.used) return;
+	if (take_status(slot.pid) is void) {
+		if (slot.pidfd >= 0) {
+			godel::epoll_remove(&ep, slot.pidfd);
+			godel::close_fd(slot.pidfd);
+			slot.pidfd = -1;
+		};
+		return;
+	};
+	if (slot.pidfd >= 0) {
+		godel::epoll_remove(&ep, slot.pidfd);
+		godel::close_fd(slot.pidfd);
+		slot.pidfd = -1;
+	};
+	if (slot.had_cgroup) {
+		const name = slot.name[..slot.name_len];
+		let _ = godel::kill_tree(&cg, name);
+		godel::release(&cg, name);
+	};
+	slot.used = false;
+	write_status();
+	if (shutdown.active && all_stopped()) finish_shutdown();
+};
+
+fn handle_signal(sig: u8) void = {
+	switch (sig: int) {
+	case rt::SIGTERM, rt::SIGINT => begin_shutdown(shutdown_action::poweroff);
+	case rt::SIGUSR1 => begin_shutdown(shutdown_action::reboot);
+	case rt::SIGHUP => reload();
+	case rt::SIGCHLD => {
+			reap_orphans();
+			reap_unobserved_children();
+		};
+	case => void;
+	};
+};
+
+fn ensure_tables(count: size) void = {
+	if (len(svcs) >= count && len(dying) >= count) return;
+	const n_svcs = alloc([godel::new_runtime()...], count) as []godel::runtime;
+	for (let i = 0z; i < len(svcs); i += 1) n_svcs[i] = svcs[i];
+	const n_dying = alloc([dying_entry { pidfd = -1, ... }...], count)
+		as []dying_entry;
+	for (let i = 0z; i < len(dying); i += 1) n_dying[i] = dying[i];
+	const n_notify = alloc([-1...], count) as []int;
+	for (let i = 0z; i < len(notify_r); i += 1) n_notify[i] = notify_r[i];
+	const n_reaped = alloc([reaped_entry { ... }...], count * 4)
+		as []reaped_entry;
+	for (let i = 0z; i < len(reaped); i += 1) n_reaped[i] = reaped[i];
+	for (let i = len(reaped); i < len(n_reaped); i += 1) {
+		n_reaped[i] = reaped_entry { ... };
+	};
+	const n_order = alloc([0...], count) as []size;
+	const n_match = alloc([godel::NO_INDEX...], count) as []u16;
+	const n_matched = alloc([false...], count) as []bool;
+	const n_status = alloc([0...], count * 96 + 64) as []u8;
+
+	const old_svcs = svcs;
+	const old_dying = dying;
+	const old_notify = notify_r;
+	const old_reaped = reaped;
+	const old_order = start_order_buf;
+	const old_match = match_idx;
+	const old_matched = matched;
+	const old_status = status_buf;
+	svcs = n_svcs;
+	dying = n_dying;
+	notify_r = n_notify;
+	reaped = n_reaped;
+	start_order_buf = n_order;
+	match_idx = n_match;
+	matched = n_matched;
+	status_buf = n_status;
+	reaped_slot %= len(reaped);
+	if (len(old_svcs) > 0) free(old_svcs);
+	if (len(old_dying) > 0) free(old_dying);
+	if (len(old_notify) > 0) free(old_notify);
+	if (len(old_reaped) > 0) free(old_reaped);
+	if (len(old_order) > 0) free(old_order);
+	if (len(old_match) > 0) free(old_match);
+	if (len(old_matched) > 0) free(old_matched);
+	if (len(old_status) > 0) free(old_status);
+	for (let s = 0z; s < len(dying); s += 1) {
+		if (dying[s].used && dying[s].pidfd >= 0) {
+			let _ = godel::epoll_modify(&ep, dying[s].pidfd,
+				godel::TAG_DYING_BASE + s: u64);
+		};
+	};
+};
+
+fn reap_unobserved_children() void = {
+	for (let i = 0z; i < sets[active_set].count; i += 1) {
+		if (svcs[i].pid <= 0 || svcs[i].pidfd >= 0) continue;
+		match (take_status(svcs[i].pid)) {
+		case void => void;
+		case let status: u32 => on_service_exit(i, status);
+		};
+	};
+	for (let i = 0z; i < len(dying); i += 1) {
+		if (!dying[i].used || dying[i].pidfd >= 0) continue;
+		if (take_status(dying[i].pid) is u32) {
+			const slot = &dying[i];
+			if (slot.had_cgroup) {
+				const name = slot.name[..slot.name_len];
+				let _ = godel::kill_tree(&cg, name);
+				godel::release(&cg, name);
+			};
+			slot.used = false;
+		};
+	};
+	if (rescue_pid > 0 && rescue_pidfd < 0
+			&& take_status(rescue_pid) is u32) {
+		on_rescue_exit();
+	};
+	write_status();
+};
+
+fn begin_shutdown(mode: shutdown_action) void = {
+	if (shutdown.active) {
+		if (shutdown.mode != mode) shutdown.mode = mode;
+		return;
+	};
+	shutdown = shutdown_state {
+		active = true,
+		mode = mode,
+		deadline = 0,
+		begin_ms = godel::now_ms(),
+	};
+	logf("godel: shutting down ({})\n",
+		if (mode == shutdown_action::reboot) "reboot" else "poweroff");
+	let longest: i64 = 1_000;
+	let running: size = 0;
+	for (let i = 0z; i < sets[active_set].count; i += 1) {
+		if (svcs[i].state != godel::state::up) continue;
+		running += 1;
+		if (sets[active_set].services[i].shutdown_timeout_ms > longest) {
+			longest = sets[active_set].services[i].shutdown_timeout_ms;
+		};
+		stop_service(i);
+	};
+	logf("godel: stopping {} running service(s)\n", running: i64);
+	if (rescue_pid > 0) godel::kill_process_group(rescue_pid, rt::SIGTERM);
+	if (longest > SHUTDOWN_CAP_MS) longest = SHUTDOWN_CAP_MS;
+	shutdown.deadline = godel::now_ms() + longest;
+	logf("godel: shutdown deadline in {} ms\n", longest);
+	shutdown_kick();
+};
+
+fn shutdown_kick() void = {
+	let next: (void | i64) = void;
+	for (let i = 0z; i < sets[active_set].count; i += 1) {
+		if (svcs[i].pid <= 0) continue;
+		match (next) {
+		case void => next = svcs[i].shutdown_at;
+		case let t: i64 =>
+			if (svcs[i].shutdown_at < t) next = svcs[i].shutdown_at;
+		};
+	};
+	for (let i = 0z; i < len(dying); i += 1) {
+		if (!dying[i].used || dying[i].pid <= 0) continue;
+		match (next) {
+		case void => next = dying[i].shutdown_at;
+		case let t: i64 =>
+			if (dying[i].shutdown_at < t) next = dying[i].shutdown_at;
+		};
+	};
+	match (next) {
+	case void => void;
+	case let t: i64 =>
+		if (t < shutdown.deadline) shutdown.deadline = t;
+	};
+};
+
+fn on_timer() void = {
+	const now = godel::now_ms();
+	if (shutdown.active) {
+		let killed = false;
+		let next: (void | i64) = void;
+		for (let i = 0z; i < sets[active_set].count; i += 1) {
+			if (svcs[i].pid <= 0) continue;
+			if (now >= svcs[i].shutdown_at) {
+				logf("godel: sending SIGKILL to {} (shutdown timeout)\n",
+					nm(godel::svc_name(&sets[active_set].services[i])));
+				godel::kill_process_group(svcs[i].pid, rt::SIGKILL);
+				let _ = godel::kill_tree(&cg,
+					godel::svc_name(&sets[active_set].services[i]));
+				svcs[i].shutdown_at = now + KILL_PHASE_MS;
+				killed = true;
+			};
+			match (next) {
+			case void => next = svcs[i].shutdown_at;
+			case let t: i64 =>
+				if (svcs[i].shutdown_at < t) next = svcs[i].shutdown_at;
+			};
+		};
+		for (let i = 0z; i < len(dying); i += 1) {
+			if (!dying[i].used || dying[i].pid <= 0) continue;
+			if (now >= dying[i].shutdown_at) {
+				logf("godel: sending SIGKILL to {} (shutdown timeout)\n",
+					nm(dying[i].name[..dying[i].name_len]));
+				godel::kill_process_group(dying[i].pid, rt::SIGKILL);
+				dying[i].shutdown_at = now + KILL_PHASE_MS;
+				killed = true;
+			};
+			match (next) {
+			case void => next = dying[i].shutdown_at;
+			case let t: i64 =>
+				if (dying[i].shutdown_at < t) next = dying[i].shutdown_at;
+			};
+		};
+		if (rescue_pid > 0) {
+			godel::kill_process_group(rescue_pid, rt::SIGKILL);
+		};
+		match (next) {
+		case void => void;
+		case let t: i64 =>
+			if (killed) {
+				shutdown.deadline = t;
+			} else if (now >= shutdown.deadline) {
+				finish_shutdown();
+			};
+		};
+		return;
+	};
+	for (let i = 0z; i < sets[active_set].count; i += 1) {
+		if (svcs[i].state != godel::state::backoff
+				|| svcs[i].restart_at > now) continue;
+		svcs[i].state = godel::state::stopped;
+		svcs[i].restart_at = 0;
+		start(i);
+	};
+	for (let i = 0z; i < sets[active_set].count; i += 1) {
+		const cfg = &sets[active_set].services[i];
+		if (!godel::readiness_due(cfg, &svcs[i], now)) continue;
+		svcs[i].released = true;
+		logf("godel: {}: readiness timeout after {} ms; failed, releasing dependents\n",
+			nm(godel::svc_name(cfg)), cfg.readiness_timeout_ms);
+		write_status();
+		stop_service(i);
+		pump_starts();
+	};
+};
+
+fn check_recovery() void = {
+	if (shutdown.active || recovery_active) return;
+	let any_gave_up = false;
+	for (let i = 0z; i < sets[active_set].count; i += 1) {
+		switch (svcs[i].state) {
+		case godel::state::up, godel::state::backoff => return;
+		case godel::state::gave_up => any_gave_up = true;
+		case godel::state::stopped => void;
+		};
+	};
+	if (!any_gave_up) {
+		logf("godel: all services finished; powering off\n");
+		begin_shutdown(shutdown_action::poweroff);
+		return;
+	};
+	if (!recovery_used) {
+		enter_rescue();
+		return;
+	};
+	logf("godel: services keep failing and recovery was used\n");
+	begin_shutdown(shutdown_action::poweroff);
+};
+
+fn enter_rescue() void = {
+	recovery_used = true;
+	logf("godel: starting recovery shell on console\n");
+	const pid = match (rt::fork()) {
+	case void => run_rescue();
+	case let e: rt::errno =>
+		logf("godel: rescue fork failed\n");
+		begin_shutdown(shutdown_action::poweroff);
+		return;
+	case let p: rt::pid_t => yield p;
+	};
+	rescue_pid = pid;
+	match (godel::pidfd_open(pid)) {
+	case let pfd: int =>
+		rescue_pidfd = pfd;
+		if (!(godel::epoll_add(&ep, pfd, godel::TAG_RESCUE) is void)) {
+			godel::close_fd(pfd);
+			rescue_pidfd = -1;
+		};
+	case => void;
+	};
+	recovery_active = true;
+};
+
+fn run_rescue() never = {
+	let _ = rt::setsid();
+	godel::unblock_signals();
+	let argv: [2]nullable *const u8 = [null, null];
+	argv[0] = &RESCUE_CS[0]: *const u8;
+	let envbufs: [3][48]u8 = [[0...]...];
+	let envp: [4]nullable *const u8 = [null...];
+	let _ = setup_envp(envp[..], &envbufs);
+	let _ = rt::execve(&RESCUE_CS[0]: *const u8,
+		&argv: *[*]nullable *const u8, &envp: *[*]nullable *const u8);
+	logf("godel: cannot execute rescue shell\n");
+	os::exit(127);
+};
+
+fn on_rescue_death() void = {
+	if (take_status(rescue_pid) is void) {
+		if (rescue_pidfd >= 0) {
+			godel::epoll_remove(&ep, rescue_pidfd);
+			godel::close_fd(rescue_pidfd);
+			rescue_pidfd = -1;
+		};
+		return;
+	};
+	on_rescue_exit();
+};
+
+fn on_rescue_exit() void = {
+	if (rescue_pidfd >= 0) {
+		godel::epoll_remove(&ep, rescue_pidfd);
+		godel::close_fd(rescue_pidfd);
+		rescue_pidfd = -1;
+	};
+	rescue_pid = 0;
+	recovery_active = false;
+	write_status();
+	if (shutdown.active) return;
+	logf("godel: recovery shell exited\n");
+	const next = active_set ^ 1;
+	match (load_from(next, CONF_FILE, CONF_DIR)) {
+	case void => void;
+	case let d: godel::diag =>
+		logf("godel: {}:{}: {}; no valid configuration to start\n",
+			src_path(d.file), d.line, d.msg);
+		begin_shutdown(shutdown_action::poweroff);
+		return;
+	};
+	report_warnings(next);
+	apply_config(next);
+	recovery_used = false;
+};
+
+fn readiness_deadline(i: size) (void | i64) = {
+	if (i >= sets[active_set].count) return;
+	const cfg = &sets[active_set].services[i];
+	if (cfg.notification_fd == 0 || cfg.readiness_timeout_ms <= 0) return;
+	const r = &svcs[i];
+	if (r.state != godel::state::up || r.pid <= 0 || r.ready || r.released) {
+		return;
+	};
+	return r.started_at + cfg.readiness_timeout_ms;
+};
+
+fn arm_timer() void = {
+	let nearest: (void | i64) = void;
+	if (shutdown.active) nearest = shutdown.deadline;
+	for (let i = 0z; i < sets[active_set].count; i += 1) {
+		let cand: (void | i64) = void;
+		if (svcs[i].state == godel::state::backoff) {
+			cand = svcs[i].restart_at;
+		} else {
+			cand = readiness_deadline(i);
+		};
+		match (cand) {
+		case void => void;
+		case let at: i64 => nearest = match (nearest) {
+			case void => yield at;
+			case let n: i64 => yield if (n < at) n else at;
+			};
+		};
+	};
+	match (nearest) {
+	case void => godel::timer_disable(&tmr);
+	case let deadline: i64 => godel::timer_set_abs(&tmr, deadline);
+	};
+};
+
+fn remount_ro_candidate(fstype: []u8) bool = {
+	for (let i = 0z; i < len(RO_TYPES); i += 1) {
+		if (bytes::equal(strings::toutf8(RO_TYPES[i]), fstype)) return true;
+	};
+	return false;
+};
+
+fn remount_ro_line(line: []u8, root_last: bool) void = {
+	let f1 = 0z;
+	for (f1 < len(line) && line[f1] != ' ') f1 += 1;
+	if (f1 == len(line)) return;
+	let f2 = f1 + 1;
+	for (f2 < len(line) && line[f2] != ' ') f2 += 1;
+	if (f2 == len(line)) return;
+	let t2 = f2 + 1;
+	for (t2 < len(line) && line[t2] != ' ') t2 += 1;
+	const mnt = line[f1 + 1..f2];
+	const fstype = line[f2 + 1..t2];
+	if (!remount_ro_candidate(fstype)) return;
+	// The root mount goes last: the summary append below still needs a
+	// writable root filesystem.
+	if (root_last && len(mnt) == 1 && mnt[0] == '/') return;
+	for (let i = 0z; i < len(mnt); i += 1) {
+		if (mnt[i] == '\\') return;
+	};
+	let path: [godel::MAX_PATH]u8 = [0...];
+	if (len(mnt) >= len(path)) return;
+	path[..len(mnt)] = mnt;
+	match (rt::mount("", path[..len(mnt)], &EMPTY_CS[0]: *const u8,
+			MS_REMOUNT | MS_RDONLY, null)) {
+	case void =>
+		logf("godel: remount-ro ok: {}\n", nm(mnt));
+	case let e: rt::errno =>
+		logf("godel: remount-ro FAILED on {} (errno {})\n",
+			nm(mnt), e: i64);
+	};
+};
+
+fn remount_root_ro() void = {
+	match (rt::mount("", "/", &EMPTY_CS[0]: *const u8,
+			MS_REMOUNT | MS_RDONLY, null)) {
+	case void => logf("godel: remount-ro ok: /\n");
+	case let e: rt::errno =>
+		logf("godel: remount-ro FAILED on / (errno {})\n", e: i64);
+	};
+};
+
+// Shutdown evidence used to die with /run; the last supervisor log is
+// the only record of which service delayed SIGTERM or why a remount
+// failed. Copy what exists into a persistent file while the root fs
+// is still writable.
+fn copy_into(dst_fd: int, path: str) void = {
+	const fd = match (rt::open(path, rt::O_RDONLY | rt::O_CLOEXEC, 0)) {
+	case let fd: int => yield fd;
+	case => return;
+	};
+	defer godel::close_fd(fd);
+	let buf: [8192]u8 = [0...];
+	for (true) {
+		const n = match (rt::read(fd, &buf[0]: *opaque, len(buf))) {
+		case let n: size =>
+			if (n == 0) break;
+			yield n;
+		case => break;
+		};
+		let off = 0z;
+		for (off < n) {
+			match (rt::write(dst_fd, &buf[off]: *opaque, n - off)) {
+			case let k: size => off += k;
+			case => return;
+			};
+		};
+	};
+};
+
+fn persist_shutdown_log() void = {
+	const fd = match (rt::open("/var/log/godel/shutdown.log",
+			rt::O_WRONLY | rt::O_CREATE | rt::O_TRUNC | rt::O_CLOEXEC,
+			0o600)) {
+	case let fd: int => yield fd;
+	case =>
+		logf("godel: cannot persist shutdown evidence\n");
+		return;
+	};
+	defer godel::close_fd(fd);
+	copy_into(fd, "/run/godel/godel.log.1");
+	copy_into(fd, "/run/godel/godel.log");
+};
+
+fn remount_ro_all(root_last: bool) void = {
+	const fd = match (rt::open("/proc/mounts", rt::O_RDONLY | rt::O_CLOEXEC, 0)) {
+	case let fd: int => yield fd;
+	case => return;
+	};
+	let buf: [8192]u8 = [0...];
+	let used: size = 0;
+	for (used < len(buf)) {
+		match (rt::read(fd, &buf[used]: *opaque, len(buf) - used)) {
+		case let n: size =>
+			if (n == 0) break;
+			used += n;
+		case => break;
+		};
+	};
+	godel::close_fd(fd);
+	if (used == len(buf)) {
+		logf("godel: remount-ro: /proc/mounts truncated at {} bytes; some mounts may be missed\n",
+			used: i64);
+	};
+	let pos: size = 0;
+	for (pos < used) {
+		let end = pos;
+		for (end < used && buf[end] != '\n') end += 1;
+		if (end > pos) remount_ro_line(buf[pos..end], true);
+		pos = end + 1;
+	};
+};
+
+// Session managers (elogind scopes, for example) move user processes
+// out of the supervisor's cgroup tree. At shutdown such strays keep
+// writable mmaps alive on disk filesystems, which makes remount-ro
+// fail with EBUSY and leaves ext4 journals dirty until the next boot.
+// An init must not hand dirty disks to the power switch: every
+// userland process except PID 1 is killed once all supervised
+// services are already gone. Kernel threads and already-reaped
+// zombies are recognized by their empty /proc/PID/cmdline and left
+// alone. Raw getdents64 over a fixed buffer: no allocation on the
+// shutdown path.
+let strays_killed: i64 = 0;
+
+fn proc_has_cmdline(name: []u8) bool = {
+	let path: [32]u8 = [0...];
+	if (len(name) + 9 >= len(path)) return false;
+	path[0..5] = ['/','p','r','o','c'];
+	path[5] = '/';
+	path[6..6 + len(name)] = name;
+	const n = 6 + len(name);
+	path[n..n + 8] = ['/','c','m','d','l','i','n','e'];
+	const fd = match (rt::open(path[..n + 8], rt::O_RDONLY | rt::O_CLOEXEC, 0)) {
+	case let fd: int => yield fd;
+	case => return false;
+	};
+	defer godel::close_fd(fd);
+	let probe: [1]u8 = [0];
+	return match (rt::read(fd, &probe[0]: *opaque, 1)) {
+	case let k: size => yield k > 0;
+	case => yield false;
+	};
+};
+
+fn kill_strays() void = {
+	const fd = match (rt::open("/proc", rt::O_RDONLY | rt::O_DIRECTORY | rt::O_CLOEXEC, 0)) {
+	case let fd: int => yield fd;
+	case => return;
+	};
+	defer godel::close_fd(fd);
+	let buf: [4096]u8 = [0...];
+	for (true) {
+		const n = match (rt::getdents64(fd, &buf[0]: *opaque, len(buf))) {
+		case let n: size =>
+			if (n == 0) break;
+			yield n;
+		case => break;
+		};
+		let off: size = 0;
+		for (off + 19 <= n) {
+			const d = &buf[off]: *rt::dirent64;
+			if (d.d_reclen == 0) break;
+			const name = &d.d_name[0]: *[*]u8;
+			let pid: i64 = 0;
+			let digits = 0z;
+			for (let i = 0z; i < 12 && name[i] >= '0' && name[i] <= '9'; i += 1) {
+				pid = pid * 10 + (name[i] - '0'): i64;
+				digits += 1;
+			};
+			const dname = name[..digits + 1];
+			if (digits > 0 && dname[digits] == 0 && pid > 1
+					&& proc_has_cmdline(dname[..digits])) {
+				let _ = rt::kill(pid: int, rt::SIGKILL);
+				strays_killed += 1;
+			};
+			off += d.d_reclen: size;
+		};
+	};
+	// SIGKILL teardown (mmap release included) is asynchronous; give
+	// the exits a fixed moment to complete before remounting.
+	const nap = rt::timespec { tv_sec = 0, tv_nsec = 150_000_000 };
+	let _ = rt::nanosleep(&nap, null);
+};
+
+fn finish_shutdown() never = {
+	for (let i = 0z; i < sets[active_set].count; i += 1) {
+		if (svcs[i].pid > 0) {
+			let _ = godel::wait_pid_nohang(svcs[i].pid);
+		};
+	};
+	strays_killed = 0;
+	kill_strays();
+	logf("godel: final sweep: {} stray process(es) killed\n", strays_killed);
+	const ro_started = godel::now_ms();
+	remount_ro_all(true);
+	const sync_started = godel::now_ms();
+	rt::sync();
+	const sync_ms = godel::now_ms() - sync_started;
+	persist_shutdown_log();
+	remount_root_ro();
+	const shutdown_ms = godel::now_ms() - shutdown.begin_ms;
+	logf("godel: down in {} ms (remount-ro {} ms, sync {} ms)\n",
+		shutdown_ms, sync_started - ro_started, sync_ms);
+	logf("godel: {} now\n",
+		if (shutdown.mode == shutdown_action::reboot) "rebooting"
+		else "powering off");
+	const cmd: u64 = if (shutdown.mode == shutdown_action::reboot)
+		SHUTDOWN_RESTART
+	else
+		SHUTDOWN_POWEROFF;
+	const rc = rt::syscall(rt::SYS_reboot, RB_MAGIC, RB_CMD, cmd, 0);
+	if (rc > 0x7fff_ffff_ffff_ffff) {
+		logf("godel: reboot syscall failed\n");
+	};
+	for (true) rt::syscall(rt::SYS_pause);
+};
